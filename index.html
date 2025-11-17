@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Pa Gerrys Mart - Supermarket POS System">
+    <meta name="theme-color" content="#2c3e50">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-title" content="Pa Gerrys Mart">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏪</text></svg>">
+    <link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxOTIgMTkyIj48cGF0aCBmaWxsPSIjMjNjM2U1MCIgZD0iTTE0OCAxMjBjMC0xNy43IDE0LjMtMzIgMzItMzJzMzIgMTQuMyAzMiAzMmMwIDguOC0zLjYgMTYuNy05LjQgMjIuNmwtMTIuMiAxMi4yYy0yLjgtMi44LTYuNi00LjQtMTAuNi00LjRzLTcuOCAxLjYtMTAuNiA0LjRsLTEyLjItMTIuMmMtNS44LTUuOC05LjQtMTMuOC05LjQtMjIuNiAwLTE3LjcgMTQuMy0zMiAzMi0zMnMzMiAxNC4zIDMyIDMyYzAgOC44LTMuNiAxNi43LTkuNCAyMi42bDQuNiA0LjZjNS44IDUuOCAxNS4yIDUuOCAyMXMtNS44IDE1LjItNS44IDIxbC00LjYgNC42YzUuOCA1LjggMTMuOCA5LjQgMjIuNiA5LjQgMTcuNyAwIDMyLTE0LjMgMzItMzJ6TTE0OCAxMjBjMC04LjgtNy4yLTE2LTE2LTE2cy0xNiA3LjItMTYgMTYgNy4yIDE2IDE2IDE2LTcuMiAxNi0xNnoiLz48L3N2Zz4=">
+    
+    
+    <link rel="manifest" href="/manifest.json">
+    
+    <title>Pa Gerrys Mart - POS System</title>
+    
+    <!-- FIX 1: Added Font Awesome CDN to fix icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- External CSS -->
+    <link rel="stylesheet" href="styles.css">
+    
+    <!-- Enhanced Alert System CSS -->
+    <style>
+        .alert-badges {
+            display: flex;
+            gap: 15px;
+            margin-top: 15px;
+            justify-content: center;
+        }
+
+        .alert-badge {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            color: white;
+            font-weight: bold;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            transition: transform 0.2s;
+        }
+
+        .alert-badge:hover {
+            transform: scale(1.05);
+        }
+
+        .alert-badge.critical {
+            background-color: #e74c3c;
+        }
+
+        .alert-badge.high {
+            background-color: #f39c12;
+        }
+
+        .alert-badge.medium {
+            background-color: #3498db;
+        }
+
+        .alert-badge span {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+
+        .alert-badge p {
+            margin: 0;
+            font-size: 12px;
+        }
+
+        .alert-item {
+            display: flex;
+            align-items: flex-start;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            background-color: #f8f9fa;
+            transition: all 0.2s;
+        }
+
+        .alert-item:hover {
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .alert-item.critical {
+            border-left: 4px solid #e74c3c;
+            background-color: #fdeaea;
+        }
+
+        .alert-item.high {
+            border-left: 4px solid #f39c12;
+            background-color: #fef9e7;
+        }
+
+        .alert-item.medium {
+            border-left: 4px solid #3498db;
+            background-color: #eef7fd;
+        }
+
+        .alert-item.discrepancy {
+            border-left: 4px solid #9b59b6;
+            background-color: #f4ecf7;
+        }
+
+        .alert-icon {
+            margin-right: 15px;
+            color: #7f8c8d;
+            font-size: 18px;
+        }
+
+        .alert-item.critical .alert-icon {
+            color: #e74c3c;
+        }
+
+        .alert-item.high .alert-icon {
+            color: #f39c12;
+        }
+
+        .alert-item.medium .alert-icon {
+            color: #3498db;
+        }
+
+        .alert-item.discrepancy .alert-icon {
+            color: #9b59b6;
+        }
+
+        .alert-content {
+            flex: 1;
+        }
+
+        .alert-message {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .alert-time {
+            font-size: 12px;
+            color: #7f8c8d;
+        }
+
+        .alert-actions {
+            display: flex;
+            gap: 5px;
+            margin-left: 10px;
+        }
+
+        .btn-sm {
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+
+        .analytics-summary-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .summary-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+
+        .summary-card h3 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            color: #2c3e50;
+        }
+
+        .highlight {
+            animation: highlight 3s ease-in-out;
+        }
+
+        @keyframes highlight {
+            0% { background-color: rgba(255, 193, 7, 0.5); }
+            100% { background-color: transparent; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Offline Indicator -->
+    <div id="offline-indicator" class="offline-indicator">
+        <i class="fas fa-wifi-slash"></i> You are currently offline. Some features may be limited.
+    </div>
+    
+    <!-- Sync Status Indicator -->
+    <div id="sync-status" class="sync-status">
+        <i class="fas fa-sync"></i> <span id="sync-status-text">Syncing data...</span>
+    </div>
+    
+    <!-- Mobile Menu Button -->
+    <button id="mobile-menu-btn" class="mobile-menu-btn">
+        <i class="fas fa-bars"></i>
+    </button>
+    
+    <!-- Login Page -->
+    <div id="login-page" class="login-container">
+        <div class="login-card">
+            <div class="login-header">
+                <h1>Pa Gerrys Mart</h1>
+                <p>Alatishe, Ibeju Lekki, Lagos State, Nigeria</p>
+            </div>
+            
+            <div class="login-tabs">
+                <div class="login-tab active" data-tab="login">Login</div>
+                <div class="login-tab" data-tab="register" id="register-tab">Register</div>
+            </div>
+            
+            <!-- Login Tab -->
+            <div id="login-tab" class="tab-content active">
+                <form id="login-form">
+                    <div class="form-group">
+                        <label for="login-email">Email</label>
+                        <input type="email" id="login-email" name="login-email" placeholder="Enter your email" required autocomplete="username">
+                    </div>
+                    <div class="form-group">
+                        <label for="login-password">Password</label>
+                        <input type="password" id="login-password" name="login-password" placeholder="Enter your password" required autocomplete="current-password">
+                    </div>
+                    <button type="submit" class="login-btn" id="login-submit-btn">Login</button>
+                    <div id="login-error" class="login-error">Invalid email or password. Please try again.</div>
+                </form>
+            </div>
+            
+            <!-- Register Tab -->
+            <div id="register-tab-content" class="tab-content">
+                <form id="register-form">
+                    <div class="form-group">
+                        <label for="register-name">Full Name</label>
+                        <input type="text" id="register-name" name="register-name" placeholder="Enter your full name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="register-email">Email</label>
+                        <input type="email" id="register-email" name="register-email" placeholder="Enter your email" required autocomplete="username">
+                    </div>
+                    <div class="form-group">
+                        <label for="register-password">Password</label>
+                        <input type="password" id="register-password" name="register-password" placeholder="Create a password" required autocomplete="new-password">
+                    </div>
+                    <div class="form-group">
+                        <label for="register-confirm-password">Confirm Password</label>
+                        <input type="password" id="register-confirm-password" name="register-confirm-password" placeholder="Confirm your password" required autocomplete="new-password">
+                    </div>
+                    <div class="form-group">
+                        <label for="register-role">Role</label>
+                        <select id="register-role" name="register-role" required>
+                            <option value="">Select Role</option>
+                            <option value="admin">Admin</option>
+                            <option value="cashier">Cashier</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="login-btn" id="register-submit-btn">Register</button>
+                    <div id="register-error" class="login-error">Registration failed. Please try again.</div>
+                </form>
+            </div>
+        </div>
+        <!-- PWA Install Button on Login Page -->
+        <button id="install-btn" class="install-btn" style="display: none;">
+            <i class="fas fa-download"></i> Install App
+        </button>
+    </div>
+    
+    <!-- Main Application -->
+    <div id="app-container" class="container" style="display: none;">
+        <!-- Sidebar -->
+        <div id="sidebar" class="sidebar">
+            <div class="logo">
+                <h1>Pa Gerrys Mart</h1>
+                <p>Supermarket POS</p>
+            </div>
+            <ul class="nav-menu">
+                <li class="nav-item">
+                    <a href="#" class="nav-link active" data-page="pos">
+                        <i class="fas fa-cash-register"></i>
+                        <span>Point of Sale</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#" class="nav-link" data-page="inventory">
+                        <i class="fas fa-boxes"></i>
+                        <span>Inventory</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#" class="nav-link" data-page="reports">
+                        <i class="fas fa-chart-line"></i>
+                        <span>Sales Reports</span>
+                    </a>
+                </li>
+                <!-- NEW: Added navigation items for new features -->
+                <li class="nav-item">
+                    <a href="#" class="nav-link" data-page="expenses">
+                        <i class="fas fa-receipt"></i>
+                        <span>Expenses</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#" class="nav-link" data-page="purchases">
+                        <i class="fas fa-shopping-cart"></i>
+                        <span>Purchases</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#" class="nav-link" data-page="analytics">
+                        <i class="fas fa-chart-pie"></i>
+                        <span>Analytics</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#" class="nav-link" data-page="account">
+                        <i class="fas fa-user-cog"></i>
+                        <span>My Account</span>
+                    </a>
+                </li>
+            </ul>
+        </div>
+        
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Header -->
+            <div class="header">
+                <h2 id="page-title">Point of Sale</h2>
+                <div class="user-info">
+                    <div class="user-icon">
+                        <i class="fas fa-user"></i>
+                    </div>
+                    <span id="current-user">User</span>
+                    <span id="user-role" class="user-role">Admin</span>
+                    <button class="logout-btn" id="logout-btn">Logout</button>
+                </div>
+            </div>
+            
+            <!-- POS Page -->
+            <div id="pos-page" class="page-content">
+                <div class="pos-container">
+                    <div class="products-section">
+                        <div class="section-header">
+                            <h3>Products</h3>
+                            <button class="btn btn-primary" id="add-product-btn">
+                                <i class="fas fa-plus"></i> Add Product
+                            </button>
+                        </div>
+                        
+                        <div class="search-bar">
+                            <input type="text" id="product-search" name="product-search" placeholder="Search products or scan barcode...">
+                            <button id="search-btn"><i class="fas fa-search"></i></button>
+                        </div>
+                        
+                        <div class="products-grid" id="products-grid">
+                            <div class="empty-state">
+                                <i class="fas fa-box-open"></i>
+                                <h3>No Products Added Yet</h3>
+                                <p>Click "Add Product" to start adding your inventory</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="cart-section">
+                        <h3>Current Sale</h3>
+                        
+                        <div class="cart-items" id="cart-items">
+                            <p style="text-align: center; color: #999; padding: 20px;">No items in cart</p>
+                        </div>
+                        
+                        <div class="cart-summary">
+                            <div class="summary-row total">
+                                <span>Total:</span>
+                                <span id="total">₦0.00</span>
+                            </div>
+                        </div>
+                        
+                        <div class="cart-actions">
+                            <button class="btn btn-outline" id="clear-cart-btn">Clear</button>
+                            <button class="btn btn-success" id="complete-sale-btn">Complete Sale</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Inventory Page -->
+            <div id="inventory-page" class="page-content" style="display: none;">
+                <div class="inventory-container">
+                    <div class="loading-overlay" id="inventory-loading" style="display: none;">
+                        <div class="loading-spinner"></div>
+                    </div>
+                    <div class="inventory-header">
+                        <h3>Inventory Management</h3>
+                        <button class="btn btn-primary" id="add-inventory-btn">
+                            <i class="fas fa-plus"></i> Add New Product
+                        </button>
+                    </div>
+                    
+                    
+                    <div class="inventory-value">
+                        <h3>Total Inventory Value</h3>
+                        <div class="value" id="inventory-total-value">₦0.00</div>
+                    </div>
+                    <div class="inventory-value">
+                        <h3>Total Items</h3>
+                        <div class="value" id="inventory-total-items">0</div>
+                    </div>
+
+                    <div class="inventory-value" id="inventory-category-summary" style="margin-top: 15px; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;"></div>
+                    
+                    
+                    <div class="search-bar">
+                        <input type="text" id="inventory-search" name="inventory-search" placeholder="Search inventory...">
+                        <button id="inventory-search-btn"><i class="fas fa-search"></i></button>
+                    </div>
+                    
+                    <div class="inventory-table-container">
+                        <table class="inventory-table">
+                            <thead>
+                                <tr>
+                                    <th>Product ID</th>
+                                    <th>Name</th>
+                                    <th>Category</th>
+                                    <th>Price</th>
+                                    <th>Stock</th>
+                                    <th>Expiry Date</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="inventory-table-body">
+                                <tr>
+                                    <td colspan="8" style="text-align: center;">No products in inventory</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Reports Page -->
+            <div id="reports-page" class="page-content" style="display: none;">
+                <div class="inventory-container">
+                    <div class="loading-overlay" id="reports-loading" style="display: none;">
+                        <div class="loading-spinner"></div>
+                    </div>
+                    <h3>Sales Reports</h3>
+                    
+                    <!-- Daily Report Controls -->
+                    <div class="daily-report-controls">
+                        <label for="report-date">Select Date:</label>
+                        <input type="date" id="report-date" name="report-date" value="">
+                        <button id="generate-report-btn">Generate Report</button>
+                        <button id="manual-sync-btn" class="btn btn-primary">
+                            <i class="fas fa-sync"></i> Sync Now
+                        </button>
+                    </div>
+                    
+                    <!-- Overall Summary -->
+                    <div class="report-section">
+                        <h3><i class="fas fa-chart-bar"></i> Overall Summary</h3>
+                        <div class="sales-summary" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">
+                            <div class="summary-card" style="background: #f8f9fa; border-radius: 8px; padding: 15px; text-align: center;">
+                                <div class="value" style="font-size: 1.8rem; font-weight: 700; color: var(--dark-color); margin-bottom: 5px;" id="report-total-sales">₦0.00</div>
+                                <div class="label" style="color: var(--gray-color); font-size: 0.9rem;">Total Sales</div>
+                            </div>
+                            <div class="summary-card" style="background: #f8f9fa; border-radius: 8px; padding: 15px; text-align: center;">
+                                <div class="value" style="font-size: 1.8rem; font-weight: 700; color: var(--dark-color); margin-bottom: 5px;" id="report-transactions">0</div>
+                                <div class="label" style="color: var(--gray-color); font-size: 0.9rem;">Transactions</div>
+                            </div>
+                            <div class="summary-card" style="background: #f8f9fa; border-radius: 8px; padding: 15px; text-align: center;">
+                                <div class="value" style="font-size: 1.8rem; font-weight: 700; color: var(--dark-color); margin-bottom: 5px;" id="report-items-sold">0</div>
+                                <div class="label" style="color: var(--gray-color); font-size: 0.9rem;">Items Sold</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Daily Report Section -->
+                    <div class="report-section">
+                        <h3><i class="fas fa-calendar-day"></i> Daily Report</h3>
+                        <div class="daily-summary" id="daily-summary">
+                            <div class="daily-summary-card">
+                                <div class="value" id="daily-total-sales">₦0.00</div>
+                                <div class="label">Daily Sales</div>
+                            </div>
+                            <div class="daily-summary-card">
+                                <div class="value" id="daily-transactions">0</div>
+                                <div class="label">Daily Transactions</div>
+                            </div>
+                            <div class="daily-summary-card">
+                                <div class="value" id="daily-items-sold">0</div>
+                                <div class="label">Daily Items Sold</div>
+                            </div>
+                        </div>
+                        
+                        <h4 style="margin-top: 20px; margin-bottom: 10px;">Daily Sales Details</h4>
+                        <table class="daily-sales-table">
+                            <thead>
+                                <tr>
+                                    <th>Receipt #</th>
+                                    <th>Time</th>
+                                    <th>Items</th>
+                                    <th>Total</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="daily-sales-table-body">
+                                <tr>
+                                    <td colspan="5" class="no-data">No sales data for selected date</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Recent Sales Section -->
+                    <div class="report-section">
+                        <h3><i class="fas fa-history"></i> Recent Sales</h3>
+                        <table class="inventory-table">
+                            <thead>
+                                <tr>
+                                    <th>Receipt #</th>
+                                    <th>Date</th>
+                                    <th>Items</th>
+                                    <th>Total</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="sales-table-body">
+                                <tr>
+                                    <td colspan="5" style="text-align: center;">No sales data available</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        
+                        <!-- Deleted Sales Section -->
+                        <div class="deleted-sales-section">
+                            <h4><i class="fas fa-trash-alt"></i> Deleted Sales</h4>
+                            <table class="deleted-sales-table">
+                                <thead>
+                                    <tr>
+                                        <th>Receipt #</th>
+                                        <th>Date</th>
+                                        <th>Items</th>
+                                        <th>Total</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="deleted-sales-table-body">
+                                    <tr>
+                                        <td colspan="5" style="text-align: center;">No deleted sales</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- NEW: Expenses Page -->
+            <div id="expenses-page" class="page-content" style="display: none;">
+                <div class="inventory-container">
+                    <div class="loading-overlay" id="expenses-loading" style="display: none;">
+                        <div class="loading-spinner"></div>
+                    </div>
+                    <div class="inventory-header">
+                        <h3>Expense Management</h3>
+                        <button class="btn btn-primary" id="add-expense-btn">
+                            <i class="fas fa-plus"></i> Add Expense
+                        </button>
+                        <button class="btn btn-outline" id="refresh-expenses-btn">
+                            <i class="fas fa-sync"></i> Refresh
+                        </button>
+                    </div>
+                    
+                    <div class="expense-summary">
+                        <div class="summary-card">
+                            <h3>Total Expenses (This Month)</h3>
+                            <p id="monthly-expenses-total">₦0.00</p>
+                        </div>
+                        <div class="summary-card">
+                            <h3>Total Expenses (This Year)</h3>
+                            <p id="yearly-expenses-total">₦0.00</p>
+                        </div>
+                        <div class="summary-card">
+                            <h3>Expense Categories</h3>
+                            <div id="expense-categories-chart"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="table-container">
+                        <div class="table-header">
+                            <h3>Recent Expenses</h3>
+                            <div class="table-actions">
+                                <input type="text" id="expense-search" name="expense-search" placeholder="Search expenses...">
+                                <select id="expense-filter-category" name="expense-filter-category">
+                                    <option value="">All Categories</option>
+                                    <option value="Rent">Rent</option>
+                                    <option value="Utilities">Utilities</option>
+                                    <option value="Salaries">Salaries</option>
+                                    <option value="Supplies">Supplies</option>
+                                    <option value="Marketing">Marketing</option>
+                                    <option value="Maintenance">Maintenance</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                                <input type="date" id="expense-filter-date" name="expense-filter-date">
+                            </div>
+                        </div>
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Description</th>
+                                    <th>Category</th>
+                                    <th>Amount</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="expenses-table-body">
+                                <tr>
+                                    <td colspan="5" style="text-align: center;">No expenses data available</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- NEW: Purchases Page -->
+            <div id="purchases-page" class="page-content" style="display: none;">
+                <div class="inventory-container">
+                    <div class="loading-overlay" id="purchases-loading" style="display: none;">
+                        <div class="loading-spinner"></div>
+                    </div>
+                    <div class="inventory-header">
+                        <h3>Purchase Management</h3>
+                        <button class="btn btn-primary" id="add-purchase-btn">
+                            <i class="fas fa-plus"></i> Add Purchase
+                        </button>
+                        <button class="btn btn-outline" id="refresh-purchases-btn">
+                            <i class="fas fa-sync"></i> Refresh
+                        </button>
+                    </div>
+                    
+                    <div class="purchase-summary">
+                        <div class="summary-card">
+                            <h3>Total Purchases (This Month)</h3>
+                            <p id="monthly-purchases-total">₦0.00</p>
+                        </div>
+                        <div class="summary-card">
+                            <h3>Total Purchases (This Year)</h3>
+                            <p id="yearly-purchases-total">₦0.00</p>
+                        </div>
+                        <div class="summary-card">
+                            <h3>Suppliers</h3>
+                            <p id="total-suppliers">0</p>
+                        </div>
+                    </div>
+                    
+                    <div class="table-container">
+                        <div class="table-header">
+                            <h3>Recent Purchases</h3>
+                            <div class="table-actions">
+                                <input type="text" id="purchase-search" name="purchase-search" placeholder="Search purchases...">
+                                <input type="date" id="purchase-filter-date" name="purchase-filter-date">
+                            </div>
+                        </div>
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Supplier</th>
+                                    <th>Description</th>
+                                    <th>Amount</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="purchases-table-body">
+                                <tr>
+                                    <td colspan="5" style="text-align: center;">No purchases data available</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- NEW: Analytics Page -->
+            <div id="analytics-page" class="page-content" style="display: none;">
+                <div class="inventory-container">
+                    <div class="loading-overlay" id="analytics-loading" style="display: none;">
+                        <div class="loading-spinner"></div>
+                    </div>
+                    <div class="inventory-header">
+                        <h3>Business Analytics</h3>
+                        <div class="page-actions">
+                            <select id="analytics-period" name="analytics-period">
+                                <option value="week">This Week</option>
+                                <option value="month" selected>This Month</option>
+                                <option value="quarter">This Quarter</option>
+                                <option value="year">This Year</option>
+                                <option value="custom">Custom Range</option>
+                            </select>
+                            <div id="custom-date-range" style="display: none;">
+                            <input type="date" id="analytics-start-date" name="analytics-start-date">
+                            <input type="date" id="analytics-end-date" name="analytics-end-date">
+                            </div>
+                            <button class="btn btn-outline" id="refresh-analytics-btn">
+                                <i class="fas fa-sync"></i> Refresh
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Enhanced Analytics Summary Cards -->
+                    <div class="analytics-summary-cards">
+                        <div class="summary-card">
+                            <h3>Revenue</h3>
+                            <p id="analytics-revenue">₦0.00</p>
+                        </div>
+                        <div class="summary-card">
+                            <h3>Expenses</h3>
+                            <p id="analytics-expenses">₦0.00</p>
+                        </div>
+                        <div class="summary-card">
+                            <h3>Profit</h3>
+                            <p id="analytics-profit">₦0.00</p>
+                        </div>
+                        <div class="summary-card">
+                            <h3>Profit Margin</h3>
+                            <p id="analytics-profit-margin">0%</p>
+                        </div>
+                    </div>
+                    
+                    <div class="analytics-charts">
+                        <div class="chart-container">
+                            <h3>Sales Trend</h3>
+                            <div id="sales-trend-chart"></div>
+                        </div>
+                        <div class="chart-container">
+                            <h3>Top Selling Products</h3>
+                            <div id="top-products-chart"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Enhanced Analytics Alerts Section -->
+                    <div class="analytics-alerts">
+                        <h3>Alerts & Discrepancies</h3>
+                        
+                        <!-- Alert Summary Badges -->
+                        <div class="alert-badges">
+                            <div class="alert-badge critical">
+                                <i class="fas fa-times-circle"></i>
+                                <span id="expired-badge">0</span>
+                                <p>Expired</p>
+                            </div>
+                            <div class="alert-badge high">
+                                <i class="fas fa-clock"></i>
+                                <span id="expiring-soon-badge">0</span>
+                                <p>Expiring Soon</p>
+                            </div>
+                            <div class="alert-badge medium">
+                                <i class="fas fa-box"></i>
+                                <span id="low-stock-badge">0</span>
+                                <p>Low Stock</p>
+                            </div>
+                            <div class="alert-badge high">
+                                <i class="fas fa-exclamation-circle"></i>
+                                <span id="discrepancy-badge">0</span>
+                                <p>Discrepancies</p>
+                            </div>
+                        </div>
+                        
+                        <div class="tabs">
+                            <button class="tab-btn active" data-tab="stock-alerts">Stock Alerts</button>
+                            <button class="tab-btn" data-tab="discrepancies">Discrepancies</button>
+                        </div>
+                        <div class="tab-content">
+                            <div id="stock-alerts-tab" class="tab-pane active">
+                                <div class="loading" id="stock-alerts-loading" style="display: none;">
+                                    <i class="fas fa-spinner fa-spin"></i> Checking stock levels...
+                                </div>
+                                <div id="stock-alerts-list">
+                                    <p>No stock alerts</p>
+                                </div>
+                            </div>
+                            <div id="discrepancies-tab" class="tab-pane">
+                                <div class="loading" id="discrepancies-loading" style="display: none;">
+                                    <i class="fas fa-spinner fa-spin"></i> Checking for discrepancies...
+                                </div>
+                                <div id="discrepancies-list">
+                                    <p>No discrepancies found</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Account Page -->
+            <div id="account-page" class="page-content" style="display: none;">
+                <div class="user-management">
+                    <div class="loading-overlay" id="account-loading" style="display: none;">
+                        <div class="loading-spinner"></div>
+                    </div>
+                    <h3>My Account</h3>
+                    
+                    <div class="user-info-card">
+                        <h3>Account Information</h3>
+                        <div class="info-row">
+                            <span class="info-label">Name:</span>
+                            <span class="info-value" id="user-name">-</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Email:</span>
+                            <span class="info-value" id="user-email">-</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Role:</span>
+                            <span class="info-value" id="user-role-display">-</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Account Created:</span>
+                            <span class="info-value" id="user-created">-</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Last Login:</span>
+                            <span class="info-value" id="user-last-login">-</span>
+                        </div>
+                    </div>
+                    
+                    <div class="inventory-header">
+                        <h3>Change Password</h3>
+                    </div>
+                    
+                    <!-- FIXED: Added username field for accessibility -->
+                    <form id="change-password-form">
+                        <div class="form-group">
+                            <label for="change-password-username">Username</label>
+                            <input type="email" id="change-password-username" name="change-password-username" autocomplete="username" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="current-password">Current Password</label>
+                            <input type="password" id="current-password" name="current-password" autocomplete="current-password" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="new-password">New Password</label>
+                            <input type="password" id="new-password" name="new-password" autocomplete="new-password" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="confirm-new-password">Confirm New Password</label>
+                            <input type="password" id="confirm-new-password" name="confirm-new-password" autocomplete="new-password" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary" id="change-password-btn">Change Password</button>
+                    </form>
+                </div>
+                
+                <!-- User Management Section (Admin Only) -->
+                <div class="users-container" id="users-container" style="display: none;">
+                    <h3>Manage Users</h3>
+                    <div class="users-list" id="users-list">
+                        <!-- Users will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Add/Edit Product Modal -->
+    <div id="product-modal" class="modal">
+        <div class="modal-content">
+            <div class="loading-overlay" id="product-modal-loading" style="display: none;">
+                <div class="loading-spinner"></div>
+            </div>
+            <div class="modal-header">
+                <h3 id="modal-title">Add New Product</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="product-form">
+                    <div class="form-group">
+                        <label for="product-name">Product Name</label>
+                        <input type="text" id="product-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="product-category">Category</label>
+                        <select id="product-category" required>
+                            <option value="">Select Category</option>
+                            <option value="Food">Food</option>
+                            <option value="Beverages">Beverages</option>
+                            <option value="Household">Household</option>
+                            <option value="Personal Care">Personal Care</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="product-price">Price (₦)</label>
+                        <input type="number" id="product-price" step="0.01" min="0" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="product-stock">Initial Stock</label>
+                        <input type="number" id="product-stock" min="0" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="product-expiry">Expiry Date</label>
+                        <input type="date" id="product-expiry" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="product-barcode">Barcode (Optional)</label>
+                        <input type="text" id="product-barcode">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" id="cancel-product-btn">Cancel</button>
+                <button class="btn btn-primary" id="save-product-btn">Save Product</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- NEW: Expense Modal -->
+    <div id="expense-modal" class="modal">
+        <div class="modal-content">
+            <div class="loading-overlay" id="expense-modal-loading" style="display: none;">
+                <div class="loading-spinner"></div>
+            </div>
+            <div class="modal-header">
+                <h3 id="expense-modal-title">Add Expense</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="expense-form">
+                    <div class="form-group">
+                        <label for="expense-date">Date</label>
+                        <input type="date" id="expense-date" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="expense-description">Description</label>
+                        <input type="text" id="expense-description" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="expense-category">Category</label>
+                        <select id="expense-category" required>
+                            <option value="">Select Category</option>
+                            <option value="Rent">Rent</option>
+                            <option value="Utilities">Utilities</option>
+                            <option value="Salaries">Salaries</option>
+                            <option value="Supplies">Supplies</option>
+                            <option value="Marketing">Marketing</option>
+                            <option value="Maintenance">Maintenance</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="expense-amount">Amount</label>
+                        <input type="number" id="expense-amount" step="0.01" min="0" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="expense-receipt">Receipt/Invoice #</label>
+                        <input type="text" id="expense-receipt">
+                    </div>
+                    <div class="form-group">
+                        <label for="expense-notes">Notes</label>
+                        <textarea id="expense-notes" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" id="cancel-expense-btn">Cancel</button>
+                <button class="btn btn-primary" id="save-expense-btn">Save Expense</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- NEW: Purchase Modal -->
+    <div id="purchase-modal" class="modal">
+        <div class="modal-content">
+            <div class="loading-overlay" id="purchase-modal-loading" style="display: none;">
+                <div class="loading-spinner"></div>
+            </div>
+            <div class="modal-header">
+                <h3 id="purchase-modal-title">Add Purchase</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="purchase-form">
+                    <div class="form-group">
+                        <label for="purchase-date">Date</label>
+                        <input type="date" id="purchase-date" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="purchase-supplier">Supplier</label>
+                        <input type="text" id="purchase-supplier" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="purchase-description">Description</label>
+                        <input type="text" id="purchase-description" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="purchase-amount">Amount</label>
+                        <input type="number" id="purchase-amount" step="0.01" min="0" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="purchase-invoice">Invoice #</label>
+                        <input type="text" id="purchase-invoice">
+                    </div>
+                    <div class="form-group">
+                        <label for="purchase-notes">Notes</label>
+                        <textarea id="purchase-notes" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" id="cancel-purchase-btn">Cancel</button>
+                <button class="btn btn-primary" id="save-purchase-btn">Save Purchase</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Receipt Modal -->
+    <div id="receipt-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Transaction Complete</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="receipt" id="receipt-content">
+                    <!-- Receipt will be dynamically generated here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" id="print-receipt-btn">Print Receipt</button>
+                <button class="btn btn-success" id="new-sale-btn">New Sale</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Notification -->
+    <div id="notification" class="notification">
+        <i class="fas fa-check-circle"></i>
+        <span id="notification-message">Operation completed successfully!</span>
+    </div>
+    
+    <!-- Supabase JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+    
+    <!-- External JS -->
+    <script src="script.js"></script>
+</body>
+</html>
