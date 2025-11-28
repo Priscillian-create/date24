@@ -2566,7 +2566,15 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
   }
   
   function productKeyNCP(p) {
-    return `${(p.name || '').toLowerCase()}|${(p.category || '').toLowerCase()}|${normalizePrice(p.price)}`;
+    const barcode = (p.barcode || '').toString().trim().toLowerCase();
+    if (barcode) {
+      return `barcode:${barcode}`;
+    }
+    const name = (p.name || '').toString().toLowerCase();
+    const category = (p.category || '').toString().toLowerCase();
+    const price = normalizePrice(p.price);
+    const expiry = (p.expiryDate || '').toString();
+    return `${name}|${category}|${price}|${expiry}`;
   }
   
   function productSignature(p) {
@@ -2575,39 +2583,40 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
   
   function dedupeProducts() {
     try {
-        if (!Array.isArray(products)) return;
-        const result = [];
-        const seenServerIds = new Set();
-        const serverSigs = new Set();
-        // Keep unique server-backed items first
-        for (let i = 0; i < products.length; i++) {
-            const p = products[i];
-            if (!p) continue;
-            const id = p.id;
-            if (id && !String(id).startsWith('temp_')) {
-                const sig = productSignature(p);
-                if (serverSigs.has(sig)) continue;
-                if (seenServerIds.has(id)) continue;
-                seenServerIds.add(id);
-                serverSigs.add(sig);
-                result.push(p);
-            }
+      if (!Array.isArray(products)) return;
+      const result = [];
+      const seenServerIds = new Set();
+      const serverSigs = new Set();
+      // Keep unique server-backed items first
+      for (let i = 0; i < products.length; i++) {
+        const p = products[i];
+        if (!p) continue;
+        const id = p.id;
+        if (id && !String(id).startsWith('temp_')) {
+          const sig = productSignature(p);
+          if (serverSigs.has(sig)) continue;
+          if (seenServerIds.has(id)) continue;
+          seenServerIds.add(id);
+          serverSigs.add(sig);
+          result.push(p);
         }
-        // Then keep at most one temp item per signature not already covered by a server item
-        const tempSigs = new Set();
-        for (let i = 0; i < products.length; i++) {
-            const p = products[i];
-            if (!p) continue;
-            const id = p.id;
-            if (id && !String(id).startsWith('temp_')) continue;
-            const sig = productSignature(p);
-            if (serverSigs.has(sig) || tempSigs.has(sig)) continue;
-            tempSigs.add(sig);
-            result.push(p);
-        }
-        products = result;
+      }
+      // Keep temp items when not exactly covered by a server item signature
+      const tempSigs = new Set();
+      for (let i = 0; i < products.length; i++) {
+        const p = products[i];
+        if (!p) continue;
+        const id = p.id;
+        if (id && !String(id).startsWith('temp_')) continue;
+        const sig = productSignature(p);
+        if (serverSigs.has(sig)) continue;
+        if (tempSigs.has(sig)) continue;
+        tempSigs.add(sig);
+        result.push(p);
+      }
+      products = result;
     } catch (e) {
-        console.error('Error de-duplicating products:', e);
+      console.error('Error de-duplicating products:', e);
     }
   }
   
