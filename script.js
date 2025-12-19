@@ -198,6 +198,12 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
             if (syncQueue.length > 0) processSyncQueue();
         })
         .catch(error => {
+            const msg = (error && (error.message || '')).toString().toLowerCase();
+            const isAbort = (error && error.name === 'AbortError') || msg.includes('abort') || msg.includes('err_aborted');
+            if (isAbort) {
+                setTimeout(checkSupabaseConnection, 2000);
+                return;
+            }
             updateConnectionStatus('offline', 'Connection failed');
             
             if (error.code === '42P17' || error.message.includes('infinite recursion')) {
@@ -5913,3 +5919,17 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         isLoadingProducts = false;
     }
   }
+  
+  window.viewSale = viewSale;
+  window.deleteSale = deleteSale;
+  window.editProduct = editProduct;
+  window.deleteProduct = deleteProduct;
+  window.filterInventoryByCategory = filterInventoryByCategory;
+  window.updateQuantity = updateQuantity;
+  window.editExpense = editExpense;
+  window.deleteExpense = deleteExpense;
+  window.editPurchase = editPurchase;
+  window.deletePurchase = deletePurchase;
+  window.viewProduct = viewProduct;
+  window.acknowledgeAlert = acknowledgeAlert;
+  window.resolveDiscrepancy = resolveDiscrepancy;
