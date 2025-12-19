@@ -640,29 +640,46 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                 const timeoutPromise = new Promise((_, reject) => 
                     setTimeout(() => reject(new Error('Request timeout')), 15000)
                 );
-                
-                const fetchPromise = supabase
-                    .from('sales')
-                    .select('*')
-                    .is('deleted_at', null)
-                    .order('created_at', { ascending: false });
-                
-                const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
-                
-                if (error) {
-                    console.error('Supabase fetch error:', error);
-                    if (error.code === '42P17' || error.message.includes('infinite recursion')) {
-                        showNotification('Database policy issue for sales. Using local cache.', 'warning');
-                    } else if (error.code === '42501' || error.message.includes('policy')) {
-                        showNotification('Permission denied for sales. Using local cache.', 'warning');
+
+                const allSales = [];
+                let offset = 0;
+                const limit = PRODUCTS_PAGE_SIZE;
+                let done = false;
+
+                while (!done) {
+                    const fetchPromise = supabase
+                        .from('sales')
+                        .select('*')
+                        .is('deleted_at', null)
+                        .order('created_at', { ascending: false })
+                        .range(offset, offset + limit - 1);
+                    const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
+                    if (error) {
+                        console.error('Supabase fetch error:', error);
+                        if (error.code === '42P17' || error.message.includes('infinite recursion')) {
+                            showNotification('Database policy issue for sales. Using local cache.', 'warning');
+                        } else if (error.code === '42501' || error.message.includes('policy')) {
+                            showNotification('Permission denied for sales. Using local cache.', 'warning');
+                        } else {
+                            throw error;
+                        }
+                        done = true;
+                    } else if (data && Array.isArray(data)) {
+                        allSales.push(...data);
+                        if (data.length < limit) {
+                            done = true;
+                        } else {
+                            offset += limit;
+                        }
                     } else {
-                        throw error;
+                        done = true;
                     }
-                } else if (data && Array.isArray(data)) {
-                    const validatedSales = data
+                }
+
+                if (allSales.length) {
+                    const validatedSales = allSales
                         .filter(s => !s.deleted && !s.deleted_at && !s.deletedAt)
                         .map(sale => {
-                        // IMPORTANT: Handle database column name (receiptnumber) to internal field (receiptNumber)
                         if (!sale.receiptNumber && sale.receiptnumber) {
                             sale.receiptNumber = sale.receiptnumber;
                         } else if (!sale.receiptNumber && !sale.receiptnumber) {
@@ -677,7 +694,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                             sale.created_at = new Date().toISOString();
                         }
                         return sale;
-                    });
+                        });
                     const localDeletedReceipts = new Set([
                         ...deletedSales.map(s => s && (s.receiptNumber || s.receiptnumber)),
                         ...sales.filter(s => s && (s.deleted || s.deleted_at || s.deletedAt)).map(s => s.receiptNumber)
@@ -3340,22 +3357,40 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
     try {
         const reportDateEl = document.getElementById('report-date');
         const selectedDate = reportDateEl ? reportDateEl.value : new Date().toISOString().split('T')[0];
+        let selectedDateObj = null;
+        if (selectedDate && typeof selectedDate === 'string') {
+            const parts = selectedDate.split('-').map(Number);
+            if (parts.length === 3 && !parts.some(isNaN)) {
+                selectedDateObj = new Date(parts[0], parts[1] - 1, parts[2]);
+            }
+        }
+        if (!selectedDateObj) {
+            const now = new Date();
+            selectedDateObj = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        }
         
-        const salesData = Array.isArray(sales) ? sales.filter(s => !s.deleted && !s.deleted_at && !s.deletedAt) : [];
-        
+        const activeSales = Array.isArray(sales) ? sales.filter(s => !s.deleted && !s.deleted_at && !s.deletedAt) : [];
+        const archivedSales = Array.isArray(deletedSales) ? deletedSales : [];
+
+        const combinedMap = new Map();
+        for (const s of [...activeSales, ...archivedSales]) {
+            if (!s || typeof s !== 'object') continue;
+            const rn = s.receiptnumber || s.receiptNumber || `NO_RN_${s.id || Math.random()}`;
+            if (!combinedMap.has(rn)) combinedMap.set(rn, s);
+        }
+        const combinedSales = Array.from(combinedMap.values());
+
         let totalSales = 0;
         let totalTransactions = 0;
         let totalItemsSold = 0;
-        
-        salesData.forEach(sale => {
+
+        combinedSales.forEach(sale => {
             if (!sale || typeof sale !== 'object') return;
-            
-            totalSales += sale.total || 0;
+            totalSales += (typeof sale.total === 'number') ? sale.total : parseFloat(sale.total) || 0;
             totalTransactions++;
-            
             if (Array.isArray(sale.items)) {
                 sale.items.forEach(item => {
-                    totalItemsSold += item.quantity || 0;
+                    totalItemsSold += Number(item.quantity) || 0;
                 });
             }
         });
@@ -3374,16 +3409,18 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         
         const dailySales = [];
         
-        salesData.forEach(sale => {
+        activeSales.forEach(sale => {
             if (!sale || typeof sale !== 'object' || !sale.created_at) return;
             
             const saleDate = new Date(sale.created_at);
             
             if (isNaN(saleDate.getTime())) return;
             
-            const saleDateString = saleDate.toISOString().split('T')[0];
+            const sameDay = saleDate.getFullYear() === selectedDateObj.getFullYear() &&
+                saleDate.getMonth() === selectedDateObj.getMonth() &&
+                saleDate.getDate() === selectedDateObj.getDate();
             
-            if (saleDateString === selectedDate) {
+            if (sameDay) {
                 dailyTotal += sale.total || 0;
                 dailyTransactions++;
                 
