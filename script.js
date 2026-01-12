@@ -6,6 +6,24 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
             .catch(err => console.log('ServiceWorker registration failed:', err));
     });
   }
+  window.addEventListener('unhandledrejection', (e) => {
+    try {
+      const msg = (e && e.reason && (e.reason.message || '') || '').toString().toLowerCase();
+      const isAbort = msg.includes('abort') || msg.includes('err_aborted');
+      if (isAbort) {
+        e.preventDefault();
+        return;
+      }
+    } catch (_) {}
+  });
+  if (navigator.serviceWorker) {
+    navigator.serviceWorker.addEventListener('message', (e) => {
+      const d = e && e.data;
+      if (d && d.type === 'SW_ACTIVATED') {
+        try { location.reload(); } catch (_) {}
+      }
+    });
+  }
   
   // Supabase initialization
   const supabaseUrl = 'https://ieriphdzlbuzqqwrymwn.supabase.co';
@@ -36,6 +54,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
     lowStockThreshold: 10,
     expiryWarningDays: 90
   };
+  const APP_VERSION = '1.0.1';
   
   // Local storage keys
   const STORAGE_KEYS = {
@@ -50,6 +69,30 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
     STOCK_ALERTS: 'pagerrysmart_stock_alerts',
     PROFIT_DATA: 'pagerrysmart_profit_data'
   };
+  function runMigrations(prev) {
+    const move = (from, to) => {
+      try {
+        const v = localStorage.getItem(from);
+        if (v && !localStorage.getItem(to)) {
+          localStorage.setItem(to, v);
+        }
+        localStorage.removeItem(from);
+      } catch (_) {}
+    };
+    move('pgm_products', STORAGE_KEYS.PRODUCTS);
+    move('pgm_sales', STORAGE_KEYS.SALES);
+    move('pgm_expenses', STORAGE_KEYS.EXPENSES);
+    move('pgm_purchases', STORAGE_KEYS.PURCHASES);
+  }
+  function ensureAppVersion() {
+    const k = 'pagerrysmart_app_version';
+    const prev = localStorage.getItem(k) || '';
+    if (prev !== APP_VERSION) {
+      runMigrations(prev);
+      localStorage.setItem(k, APP_VERSION);
+    }
+  }
+  ensureAppVersion();
   
   // DOM elements
   const loginPage = document.getElementById('login-page');
@@ -71,12 +114,16 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
   const salesTableBody = document.getElementById('sales-table-body');
   const deletedSalesTableBody = document.getElementById('deleted-sales-table-body');
   const dailySalesTableBody = document.getElementById('daily-sales-table-body');
+  const reportProductSalesBody = document.getElementById('report-product-sales-body');
+  const reportCategorySalesBody = document.getElementById('report-category-sales-body');
   const productModal = document.getElementById('product-modal');
   const receiptModal = document.getElementById('receipt-modal');
   const notification = document.getElementById('notification');
   const notificationMessage = document.getElementById('notification-message');
   const mobileMenuBtn = document.getElementById('mobile-menu-btn');
   const sidebar = document.getElementById('sidebar');
+  let currentProductSalesRows = [];
+  let currentCategorySalesRows = [];
   
   function debounce(fn, delay) {
     let timeoutId;
@@ -154,9 +201,18 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
     return { all: allAlerts, byType: alerts };
   }
   
+  function readArrayFromLS(key) {
+    try {
+      const v = localStorage.getItem(key);
+      return v ? JSON.parse(v) : [];
+    } catch (_) {
+      return [];
+    }
+  }
+  
   // Function to acknowledge an alert
   function acknowledgeAlert(productId) {
-    const acknowledgedAlerts = JSON.parse(localStorage.getItem('acknowledgedAlerts') || '[]');
+    const acknowledgedAlerts = readArrayFromLS('acknowledgedAlerts');
     
     if (!acknowledgedAlerts.includes(productId)) {
         acknowledgedAlerts.push(productId);
@@ -170,7 +226,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
   
   // Function to resolve a discrepancy
   function resolveDiscrepancy(discrepancyId, type) {
-    const resolvedDiscrepancies = JSON.parse(localStorage.getItem('resolvedDiscrepancies') || '[]');
+    const resolvedDiscrepancies = readArrayFromLS('resolvedDiscrepancies');
     
     if (!resolvedDiscrepancies.includes(discrepancyId)) {
         resolvedDiscrepancies.push(discrepancyId);
@@ -2798,6 +2854,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         loadProducts();
         loadSales();
         setupRealtimeListeners();
+        try { generateReport(); } catch (_) {}
     } catch (error) {
         console.error('Error loading initial data:', error);
         showNotification('Error loading data. Using offline cache.', 'warning');
@@ -2805,6 +2862,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         loadProducts();
         loadSales();
         setupRealtimeListeners();
+        try { generateReport(); } catch (_) {}
     }
   }
   
@@ -3341,6 +3399,39 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
     if (reportDateEl) {
         reportDateEl.value = today;
     }
+    const periodEl = document.getElementById('report-period');
+    const startEl = document.getElementById('report-start-date');
+    const endEl = document.getElementById('report-end-date');
+    if (periodEl) {
+        periodEl.addEventListener('change', () => {
+            const v = periodEl.value || 'day';
+            const showRange = v === 'custom';
+            if (startEl) startEl.style.display = showRange ? '' : 'none';
+            if (endEl) endEl.style.display = showRange ? '' : 'none';
+            generateReport();
+        });
+    }
+    if (reportDateEl) {
+        reportDateEl.addEventListener('change', generateReport);
+    }
+    if (startEl) startEl.addEventListener('change', generateReport);
+    if (endEl) endEl.addEventListener('change', generateReport);
+    const generateBtn = document.getElementById('generate-report-btn');
+    if (generateBtn) {
+        generateBtn.onclick = generateReport;
+    }
+    const productSearchEl = document.getElementById('report-product-search');
+    if (productSearchEl) {
+        productSearchEl.addEventListener('input', () => {
+            renderProductSalesTable(currentProductSalesRows, productSearchEl.value);
+        });
+    }
+    const categorySearchEl = document.getElementById('report-category-search');
+    if (categorySearchEl) {
+        categorySearchEl.addEventListener('input', () => {
+            renderCategorySalesTable(currentCategorySalesRows, categorySearchEl.value);
+        });
+    }
     
     setTimeout(() => {
         if (reportsLoading) reportsLoading.style.display = 'none';
@@ -3356,7 +3447,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         } else {
             generateReport();
         }
-    }, 500);
+    }, 0);
   }
   
   function generateReport() {
@@ -3503,10 +3594,147 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                 dailySalesTableBody.appendChild(row);
             });
         }
+        const periodEl2 = document.getElementById('report-period');
+        const period = periodEl2 ? (periodEl2.value || 'day') : 'day';
+        let rangeStart = null;
+        let rangeEnd = null;
+        if (period === 'day') {
+            rangeStart = new Date(selectedDateObj);
+            rangeStart.setHours(0,0,0,0);
+            rangeEnd = new Date(selectedDateObj);
+            rangeEnd.setHours(23,59,59,999);
+        } else if (period === 'week') {
+            const d = new Date(selectedDateObj);
+            const day = d.getDay();
+            const diffToMonday = (day + 6) % 7;
+            rangeStart = new Date(d);
+            rangeStart.setDate(d.getDate() - diffToMonday);
+            rangeStart.setHours(0,0,0,0);
+            rangeEnd = new Date(rangeStart);
+            rangeEnd.setDate(rangeStart.getDate() + 6);
+            rangeEnd.setHours(23,59,59,999);
+        } else if (period === 'month') {
+            const d = new Date(selectedDateObj);
+            rangeStart = new Date(d.getFullYear(), d.getMonth(), 1);
+            rangeEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+            rangeStart.setHours(0,0,0,0);
+            rangeEnd.setHours(23,59,59,999);
+        } else if (period === 'custom') {
+            const startEl2 = document.getElementById('report-start-date');
+            const endEl2 = document.getElementById('report-end-date');
+            const s = startEl2 && startEl2.value ? new Date(startEl2.value) : null;
+            const e = endEl2 && endEl2.value ? new Date(endEl2.value) : null;
+            if (s && !isNaN(s.getTime())) {
+                rangeStart = s;
+                rangeStart.setHours(0,0,0,0);
+            }
+            if (e && !isNaN(e.getTime())) {
+                rangeEnd = e;
+                rangeEnd.setHours(23,59,59,999);
+            }
+        }
+        let filteredActiveSales = activeSales;
+        if (rangeStart && rangeEnd) {
+            filteredActiveSales = activeSales.filter(sale => {
+                if (!sale || !sale.created_at) return false;
+                const d = new Date(sale.created_at);
+                if (isNaN(d.getTime())) return false;
+                return d >= rangeStart && d <= rangeEnd;
+            });
+        }
+        const productCountMap = new Map();
+        const categoryCountMap = new Map();
+        filteredActiveSales.forEach(sale => {
+            if (!sale || !Array.isArray(sale.items)) return;
+            sale.items.forEach(item => {
+                const qty = Number(item.quantity) || 0;
+                const pid = item.id || item.productId || '';
+                const pname = item.name || 'Unknown';
+                const price = Number(item.price) || 0;
+                const amt = price * qty;
+                if (pid || pname) {
+                    const existing = productCountMap.get(pid || pname);
+                    if (existing) {
+                        existing.count += qty;
+                        existing.amount += amt;
+                    } else {
+                        productCountMap.set(pid || pname, { name: pname, count: qty, amount: amt });
+                    }
+                }
+                let category = 'Uncategorized';
+                const p = products.find(pp => pp.id === item.id);
+                if (p && p.category) category = p.category;
+                const c = categoryCountMap.get(category);
+                if (c) {
+                    c.count += qty;
+                    c.amount += amt;
+                } else {
+                    categoryCountMap.set(category, { count: qty, amount: amt });
+                }
+            });
+        });
+        currentProductSalesRows = Array.from(productCountMap.values()).sort((a, b) => b.count - a.count);
+        currentCategorySalesRows = Array.from(categoryCountMap.entries()).map(([category, v]) => ({ category, count: v.count, amount: v.amount })).sort((a, b) => b.count - a.count);
+        const productSearchEl2 = document.getElementById('report-product-search');
+        const categorySearchEl2 = document.getElementById('report-category-search');
+        renderProductSalesTable(currentProductSalesRows, productSearchEl2 ? productSearchEl2.value : '');
+        renderCategorySalesTable(currentCategorySalesRows, categorySearchEl2 ? categorySearchEl2.value : '');
     } catch (error) {
         console.error('Error generating report:', error);
         showNotification('Error generating report: ' + error.message, 'error');
     }
+  }
+  
+  function renderProductSalesTable(rows, query) {
+    if (!reportProductSalesBody) return;
+    const q = (query || '').toString().trim().toLowerCase();
+    const list = q ? rows.filter(r => (r.name || '').toString().toLowerCase().includes(q)) : rows;
+    if (!list || list.length === 0) {
+        reportProductSalesBody.innerHTML = `
+            <tr>
+                <td colspan="3" style="text-align: center;">No product sales data</td>
+            </tr>
+        `;
+        return;
+    }
+    const fragment = document.createDocumentFragment();
+    reportProductSalesBody.innerHTML = '';
+    list.forEach(r => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${r.name}</td>
+            <td>${r.count}</td>
+            <td>${formatCurrency(r.amount || 0)}</td>
+        `;
+        fragment.appendChild(row);
+    });
+    reportProductSalesBody.appendChild(fragment);
+  }
+  
+  function renderCategorySalesTable(rows, query) {
+    if (!reportCategorySalesBody) return;
+    const q = (query || '').toString().trim().toLowerCase();
+    const list = q ? rows.filter(r => (r.category || '').toString().toLowerCase().includes(q)) : rows;
+    if (!list || list.length === 0) {
+        reportCategorySalesBody.innerHTML = `
+            <tr>
+                <td colspan="3" style="text-align: center;">No category sales data</td>
+            </tr>
+        `;
+        return;
+    }
+    const fragment = document.createDocumentFragment();
+    reportCategorySalesBody.innerHTML = '';
+    list.forEach(r => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${r.category}</td>
+            <td>${r.count}</td>
+            <td>${formatCurrency(r.amount || 0)}</td>
+        `;
+        fragment.appendChild(row);
+    });
+    reportCategorySalesBody.appendChild(fragment);
   }
   
   function loadAccount() {
@@ -3717,6 +3945,12 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
             loadSales();
             
             showNotification('Sale completed successfully', 'success');
+            
+            try {
+                if (typeof window.updateAnalyticsSummary === 'function') {
+                    window.updateAnalyticsSummary();
+                }
+            } catch (_) {}
         } else {
             showNotification('Failed to complete sale', 'error');
         }
@@ -3994,6 +4228,12 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
             if (currentPage === 'reports') {
                 generateReport();
             }
+            
+            try {
+                if (typeof window.updateAnalyticsSummary === 'function') {
+                    window.updateAnalyticsSummary();
+                }
+            } catch (_) {}
         } else {
             showNotification('Failed to delete sale', 'error');
         }
@@ -4069,11 +4309,12 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         
         loadProducts();
         loadSales();
+        try { generateReport(); } catch (_) {}
         
         if (currentPage === 'inventory') {
             loadInventory();
         } else if (currentPage === 'reports') {
-            generateReport();
+            try { generateReport(); } catch (_) {}
         } else if (currentPage === 'account') {
             loadAccount();
         } else if (currentPage === 'expenses') {
@@ -4448,7 +4689,6 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         document.getElementById('purchase-date').value = purchase.date;
         document.getElementById('purchase-supplier').value = purchase.supplier;
         document.getElementById('purchase-description').value = purchase.description;
-        document.getElementById('purchase-amount').value = purchase.amount;
         document.getElementById('purchase-invoice').value = purchase.invoice || '';
         document.getElementById('purchase-notes').value = purchase.notes || '';
         
@@ -4475,7 +4715,8 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
     const date = document.getElementById('purchase-date').value;
     const supplier = document.getElementById('purchase-supplier').value;
     const description = document.getElementById('purchase-description').value;
-    const amount = document.getElementById('purchase-amount').value;
+    const amountEl = document.getElementById('purchase-amount');
+    const amount = amountEl ? amountEl.value : '';
     const invoice = document.getElementById('purchase-invoice').value;
     const notes = document.getElementById('purchase-notes').value;
     
@@ -4484,7 +4725,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
     if (!date) missingFields.push('Date');
     if (!supplier.trim()) missingFields.push('Supplier');
     if (!description.trim()) missingFields.push('Description');
-    if (!amount || parseFloat(amount) <= 0) missingFields.push('Amount');
+    if (amountEl && (!amount || parseFloat(amount) <= 0)) missingFields.push('Amount');
     
     if (missingFields.length > 0) {
         const fieldList = missingFields.join(', ');
@@ -4494,7 +4735,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         if (!date) document.getElementById('purchase-date').classList.add('error');
         if (!supplier.trim()) document.getElementById('purchase-supplier').classList.add('error');
         if (!description.trim()) document.getElementById('purchase-description').classList.add('error');
-        if (!amount || parseFloat(amount) <= 0) document.getElementById('purchase-amount').classList.add('error');
+        if (amountEl && (!amount || parseFloat(amount) <= 0)) amountEl.classList.add('error');
         
         // Remove error highlighting after 3 seconds
         setTimeout(() => {
@@ -4508,7 +4749,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         date: date,
         supplier: supplier.trim(),
         description: description.trim(),
-        amount: parseFloat(amount),
+        amount: amountEl ? parseFloat(amount) : undefined,
         invoice: invoice,
         notes: notes
     };
@@ -4541,6 +4782,17 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         saveBtn.disabled = false;
     }
   }
+
+  // Bind Add Purchase button to open the modal
+  document.addEventListener('DOMContentLoaded', () => {
+    const addPurchaseBtn = document.getElementById('add-purchase-btn');
+    if (addPurchaseBtn) {
+      addPurchaseBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        openPurchaseModal(null);
+      });
+    }
+  });
   
   async function loadPurchases() {
     const loading = document.getElementById('purchases-loading');
@@ -4730,7 +4982,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         if (expiredBadge) expiredBadge.textContent = expiredCount;
         if (expiringSoonBadge) expiringSoonBadge.textContent = expiringSoonCount;
         if (lowStockBadge) lowStockBadge.textContent = lowStockCount;
-        const acknowledgedAlerts = JSON.parse(localStorage.getItem('acknowledgedAlerts') || '[]');
+        const acknowledgedAlerts = readArrayFromLS('acknowledgedAlerts');
         const groups = [
             { title: `Expired (${expiredCount})`, items: byType.expired },
             { title: `Expiring Soon (${expiringSoonCount})`, items: byType.expiringSoon },

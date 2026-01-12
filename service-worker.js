@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pa-gerrys-mart-v2';
+const CACHE_NAME = 'pa-gerrys-mart-v4';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -42,12 +42,21 @@ self.addEventListener('activate', event => {
           }
         })
       );
-    }).then(() => self.clients.claim())
+    }).then(() => self.clients.claim()).then(async () => {
+      const clients = await self.clients.matchAll({ type: 'window' });
+      clients.forEach(c => {
+        c.postMessage({ type: 'SW_ACTIVATED', cache: CACHE_NAME });
+      });
+    })
   );
 });
 
 self.addEventListener('fetch', event => {
   const url = event.request.url;
+  if (url.includes('livereload')) {
+    event.respondWith(new Response('', { status: 204, statusText: 'No Content' }));
+    return;
+  }
   if (url.includes('supabase.co')) {
     event.respondWith(fetch(event.request));
     return;

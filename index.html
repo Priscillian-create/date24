@@ -449,6 +449,14 @@
                     <div class="daily-report-controls">
                         <label for="report-date">Select Date:</label>
                         <input type="date" id="report-date" name="report-date" value="">
+                        <select id="report-period" name="report-period" style="margin-left:10px;">
+                            <option value="day" selected>Day</option>
+                            <option value="week">Week</option>
+                            <option value="month">Month</option>
+                            <option value="custom">Custom Period</option>
+                        </select>
+                        <input type="date" id="report-start-date" name="report-start-date" style="display:none; margin-left:10px;">
+                        <input type="date" id="report-end-date" name="report-end-date" style="display:none; margin-left:10px;">
                         <button id="generate-report-btn">Generate Report</button>
                         <button id="manual-sync-btn" class="btn btn-primary">
                             <i class="fas fa-sync"></i> Sync Now
@@ -506,6 +514,50 @@
                             <tbody id="daily-sales-table-body">
                                 <tr>
                                     <td colspan="5" class="no-data">No sales data for selected date</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Product Sales -->
+                    <div class="report-section">
+                        <h3><i class="fas fa-box"></i> Product Sales</h3>
+                        <div class="table-actions" style="margin-bottom:10px;">
+                            <input type="text" id="report-product-search" name="report-product-search" placeholder="Search product...">
+                        </div>
+                        <table class="inventory-table">
+                            <thead>
+                                <tr>
+                                    <th>Product</th>
+                                    <th>Items Sold</th>
+                                    <th>Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody id="report-product-sales-body">
+                                <tr>
+                                    <td colspan="3" style="text-align: center;">No product sales data</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Category Sales -->
+                    <div class="report-section">
+                        <h3><i class="fas fa-tags"></i> Category Sales</h3>
+                        <div class="table-actions" style="margin-bottom:10px;">
+                            <input type="text" id="report-category-search" name="report-category-search" placeholder="Search category...">
+                        </div>
+                        <table class="inventory-table">
+                            <thead>
+                                <tr>
+                                    <th>Category</th>
+                                    <th>Items Sold</th>
+                                    <th>Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody id="report-category-sales-body">
+                                <tr>
+                                    <td colspan="3" style="text-align: center;">No category sales data</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -632,7 +684,7 @@
                     </div>
                     <div class="inventory-header">
                         <h3>Purchase Management</h3>
-                        <button class="btn btn-primary" id="add-purchase-btn">
+                        <button class="btn btn-primary" id="add-purchase-btn" type="button">
                             <i class="fas fa-plus"></i> Add Purchase
                         </button>
                         <button class="btn btn-outline" id="refresh-purchases-btn">
@@ -668,14 +720,19 @@
                                 <tr>
                                     <th>Date</th>
                                     <th>Supplier</th>
-                                    <th>Description</th>
-                                    <th>Amount</th>
+                                    <th>Product</th>
+                                    <th>Qty</th>
+                                    <th>Unit Cost</th>
+                                    <th>Unit Sell</th>
+                                    <th>Cost</th>
+                                    <th>Revenue</th>
+                                    <th>Profit</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="purchases-table-body">
                                 <tr>
-                                    <td colspan="5" style="text-align: center;">No purchases data available</td>
+                                    <td colspan="10" style="text-align: center;">No purchases data available</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -720,12 +777,32 @@
                             <p id="analytics-expenses">₦0.00</p>
                         </div>
                         <div class="summary-card">
+                            <h3>Purchases (Cost)</h3>
+                            <p id="analytics-purchases">₦0.00</p>
+                        </div>
+                        <div class="summary-card">
                             <h3>Profit</h3>
                             <p id="analytics-profit">₦0.00</p>
                         </div>
                         <div class="summary-card">
                             <h3>Profit Margin</h3>
                             <p id="analytics-profit-margin">0%</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Buy vs Sell Profit -->
+                    <div class="analytics-summary-cards">
+                        <div class="summary-card">
+                            <h3>Sold Revenue</h3>
+                            <p id="analytics-sold-revenue">₦0.00</p>
+                        </div>
+                        <div class="summary-card">
+                            <h3>Sold Cost</h3>
+                            <p id="analytics-sold-cost">₦0.00</p>
+                        </div>
+                        <div class="summary-card">
+                            <h3>Realized Profit</h3>
+                            <p id="analytics-realized-profit">₦0.00</p>
                         </div>
                     </div>
                     
@@ -990,12 +1067,38 @@
                         <input type="text" id="purchase-supplier" required>
                     </div>
                     <div class="form-group">
+                        <label for="purchase-product-search">Search Product</label>
+                        <input type="text" id="purchase-product-search" placeholder="Type to search product...">
+                    </div>
+                    <input type="hidden" id="purchase-product-id">
+                    <div class="form-group">
+                        <label for="purchase-product-selected">Selected Product</label>
+                        <input type="text" id="purchase-product-selected" placeholder="No product selected" readonly>
+                    </div>
+                    <div class="form-group" id="purchase-product-suggestions"></div>
+                    <div class="form-group">
+                        <label for="purchase-quantity">Quantity</label>
+                        <input type="number" id="purchase-quantity" step="1" min="1" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="purchase-cost-price">Cost Price per Unit</label>
+                        <input type="number" id="purchase-cost-price" step="0.01" min="0" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="purchase-selling-price">Selling Price per Unit</label>
+                        <input type="number" id="purchase-selling-price" step="0.01" min="0">
+                    </div>
+                    <div class="form-group">
                         <label for="purchase-description">Description</label>
                         <input type="text" id="purchase-description" required>
                     </div>
                     <div class="form-group">
-                        <label for="purchase-amount">Amount</label>
-                        <input type="number" id="purchase-amount" step="0.01" min="0" required>
+                        <label>Expected Revenue</label>
+                        <div id="purchase-expected-revenue">₦0.00</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Expected Profit</label>
+                        <div id="purchase-expected-profit">₦0.00</div>
                     </div>
                     <div class="form-group">
                         <label for="purchase-invoice">Invoice #</label>
