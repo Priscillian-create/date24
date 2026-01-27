@@ -372,6 +372,13 @@
                                 <span>Total:</span>
                                 <span id="total">₦0.00</span>
                             </div>
+                            <div class="summary-row">
+                                <label for="payment-method">Payment Method:</label>
+                                <select id="payment-method" name="payment-method">
+                                    <option value="cash" selected>Cash</option>
+                                    <option value="pos">POS</option>
+                                </select>
+                            </div>
                         </div>
                         
                         <div class="cart-actions">
@@ -479,6 +486,14 @@
                                 <div class="value" style="font-size: 1.8rem; font-weight: 700; color: var(--dark-color); margin-bottom: 5px;" id="report-items-sold">0</div>
                                 <div class="label" style="color: var(--gray-color); font-size: 0.9rem;">Items Sold</div>
                             </div>
+                            <div class="summary-card" style="background: #f8f9fa; border-radius: 8px; padding: 15px; text-align: center;">
+                                <div class="value" style="font-size: 1.8rem; font-weight: 700; color: var(--dark-color); margin-bottom: 5px;" id="report-cash-sales">₦0.00</div>
+                                <div class="label" style="color: var(--gray-color); font-size: 0.9rem;">Cash Sales</div>
+                            </div>
+                            <div class="summary-card" style="background: #f8f9fa; border-radius: 8px; padding: 15px; text-align: center;">
+                                <div class="value" style="font-size: 1.8rem; font-weight: 700; color: var(--dark-color); margin-bottom: 5px;" id="report-pos-sales">₦0.00</div>
+                                <div class="label" style="color: var(--gray-color); font-size: 0.9rem;">POS Sales</div>
+                            </div>
                         </div>
                     </div>
                     
@@ -497,6 +512,14 @@
                             <div class="daily-summary-card">
                                 <div class="value" id="daily-items-sold">0</div>
                                 <div class="label">Daily Items Sold</div>
+                            </div>
+                            <div class="daily-summary-card">
+                                <div class="value" id="daily-cash-sales">₦0.00</div>
+                                <div class="label">Daily Cash Sales</div>
+                            </div>
+                            <div class="daily-summary-card">
+                                <div class="value" id="daily-pos-sales">₦0.00</div>
+                                <div class="label">Daily POS Sales</div>
                             </div>
                         </div>
                         
@@ -1146,6 +1169,6 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
     
     <!-- External JS -->
-    <script type="module" src="script.js"></script>
+    <script type="module" src="script.js?v=20260126"></script>
   </body>
 </html>

@@ -6,10 +6,28 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
             .catch(err => console.log('ServiceWorker registration failed:', err));
     });
   }
+  window.addEventListener('error', (e) => {
+    try {
+      const msg = (e && e.message) || '';
+      const file = (e && e.filename) || '';
+      const line = (e && e.lineno) || 0;
+      const col = (e && e.colno) || 0;
+      const lowerMsg = (msg || '').toString().toLowerCase();
+      const isAbort = lowerMsg.includes('abort') || lowerMsg.includes('err_aborted') || lowerMsg.includes('err_network_changed') || lowerMsg.includes('network_changed') || lowerMsg.includes('err_network_io_suspended') || lowerMsg.includes('network_io_suspended');
+      const isLiveReload = lowerMsg.includes('livereload') || (file || '').toString().toLowerCase().includes('livereload');
+      if (isAbort || isLiveReload) {
+        if (e && typeof e.preventDefault === 'function') e.preventDefault();
+        return;
+      }
+      console.error('[GlobalError]', msg, file, line, col);
+      const err = e && e.error;
+      if (err && err.stack) console.error(err.stack);
+    } catch (_) {}
+  });
   window.addEventListener('unhandledrejection', (e) => {
     try {
       const msg = (e && e.reason && (e.reason.message || '') || '').toString().toLowerCase();
-      const isAbort = msg.includes('abort') || msg.includes('err_aborted');
+      const isAbort = msg.includes('abort') || msg.includes('err_aborted') || msg.includes('err_network_changed') || msg.includes('network_changed') || msg.includes('err_network_io_suspended') || msg.includes('network_io_suspended') || msg.includes('livereload');
       if (isAbort) {
         e.preventDefault();
         return;
@@ -55,6 +73,9 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
     expiryWarningDays: 90
   };
   const APP_VERSION = '1.0.1';
+  let isReportsLoading = false;
+  let lastOverallTotals = { total: 0, transactions: 0, items: 0, cash: 0, pos: 0 };
+  let lastDailyTotals = { total: 0, transactions: 0, items: 0, cash: 0, pos: 0 };
   
   // Local storage keys
   const STORAGE_KEYS = {
@@ -255,7 +276,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         })
         .catch(error => {
             const msg = (error && (error.message || '')).toString().toLowerCase();
-            const isAbort = (error && error.name === 'AbortError') || msg.includes('abort') || msg.includes('err_aborted');
+            const isAbort = (error && error.name === 'AbortError') || msg.includes('abort') || msg.includes('err_aborted') || msg.includes('err_network_changed') || msg.includes('network_changed') || msg.includes('err_network_io_suspended') || msg.includes('network_io_suspended');
             if (isAbort) {
                 setTimeout(checkSupabaseConnection, 2000);
                 return;
@@ -715,12 +736,23 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                         .is('deleted_at', null)
                         .order('created_at', { ascending: false })
                         .range(offset, offset + limit - 1);
-                    const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
+                    let data, error;
+                    try {
+                        const result = await Promise.race([fetchPromise, timeoutPromise]);
+                        data = result && result.data;
+                        error = result && result.error;
+                    } catch (e) {
+                        if (e && e.message === 'Request timeout') {
+                            showNotification('Connection timeout. Using local cache.', 'warning');
+                            done = true;
+                            break;
+                        }
+                        throw e;
+                    }
                     if (error) {
-                        console.error('Supabase fetch error:', error);
-                        if (error.code === '42P17' || error.message.includes('infinite recursion')) {
+                        if (error.code === '42P17' || (error.message || '').includes('infinite recursion')) {
                             showNotification('Database policy issue for sales. Using local cache.', 'warning');
-                        } else if (error.code === '42501' || error.message.includes('policy')) {
+                        } else if (error.code === '42501' || (error.message || '').includes('policy')) {
                             showNotification('Permission denied for sales. Using local cache.', 'warning');
                         } else {
                             throw error;
@@ -763,15 +795,23 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                     ].filter(Boolean));
                     const serverActive = validatedSales.filter(s => !localDeletedReceipts.has(s.receiptNumber));
                     const serverMap = new Map(serverActive.map(s => [s.receiptNumber, s]));
-                    const mergedSales = [...serverActive];
+                    const mergedSales = [];
                     sales.forEach(ls => {
                         if (!ls) return;
                         const rn = ls.receiptNumber;
                         if (ls.deleted || ls.deleted_at || ls.deletedAt) return;
-                        if (!serverMap.has(rn)) {
+                        const srv = serverMap.get(rn);
+                        if (srv) {
+                            if (!srv.paymentmethod && ls.paymentMethod) srv.paymentmethod = ls.paymentMethod;
+                            if (!srv.paymentMethod && ls.paymentMethod) srv.paymentMethod = ls.paymentMethod;
+                            if (!Array.isArray(srv.items) || srv.items.length === 0) srv.items = Array.isArray(ls.items) ? ls.items : [];
+                            if ((typeof srv.total !== 'number' || isNaN(srv.total)) && typeof ls.total === 'number') srv.total = ls.total;
+                            if (!srv.created_at && ls.created_at) srv.created_at = ls.created_at;
+                        } else {
                             mergedSales.push(ls);
                         }
                     });
+                    serverMap.forEach(v => mergedSales.push(v));
                     mergedSales.sort((a, b) => {
                         const dateA = a.created_at ? new Date(a.created_at) : new Date(0);
                         const dateB = b.created_at ? new Date(b.created_at) : new Date(0);
@@ -784,14 +824,14 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
             }
             return sales;
         } catch (error) {
-            console.error('Error in fetchSales:', error);
-            if (error.message === 'Request timeout') {
+            if (error && error.message === 'Request timeout') {
                 showNotification('Connection timeout. Using local cache.', 'warning');
-            } else if (error.code === '42501' || error.message.includes('policy')) {
+            } else if (error && (error.code === '42501' || (error.message || '').includes('policy'))) {
                 showNotification('Permission denied for sales. Using local cache.', 'warning');
-            } else if (error.code === '42P17' || error.message.includes('infinite recursion')) {
+            } else if (error && (error.code === '42P17' || (error.message || '').includes('infinite recursion'))) {
                 showNotification('Database policy issue detected. Using local cache.', 'warning');
             } else {
+                console.error('Error in fetchSales:', error);
                 showNotification('Error fetching sales: ' + error.message, 'error');
             }
             return sales;
@@ -1427,19 +1467,38 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                     }
                     
                     // IMPORTANT: Use the correct database column names (lowercase)
-                    const saleToSave = {
+                    const saleToSaveWithPM = {
                         receiptnumber: sale.receiptNumber,  // Database column: receiptnumber
                         cashierid: validCashierId,          // Database column: cashierid
+                        items: sale.items,
+                        total: sale.total,
+                        created_at: sale.created_at,
+                        cashier: sale.cashier,
+                        paymentmethod: sale.paymentMethod
+                    };
+                    const saleToSaveNoPM = {
+                        receiptnumber: sale.receiptNumber,
+                        cashierid: validCashierId,
                         items: sale.items,
                         total: sale.total,
                         created_at: sale.created_at,
                         cashier: sale.cashier
                     };
                     
-                    const { data, error } = await supabase
-                        .from('sales')
-                        .insert(saleToSave)
-                        .select();
+                    let data, error;
+                    try {
+                        ({ data, error } = await supabase
+                            .from('sales')
+                            .insert(saleToSaveWithPM)
+                            .select());
+                        if (error) throw error;
+                    } catch (e) {
+                        ({ data, error } = await supabase
+                            .from('sales')
+                            .insert(saleToSaveNoPM)
+                            .select());
+                        if (error) throw error;
+                    }
                     
                     if (error) {
                         console.error('Supabase error:', error);
@@ -1850,19 +1909,38 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         
         if (!existingSales || existingSales.length === 0) {
             // IMPORTANT: Use the correct database column names (lowercase)
-            const saleToSave = {
+            const saleToSaveWithPM = {
                 receiptnumber: operation.data.receiptNumber,  // Database column: receiptnumber
                 cashierid: validCashierId,                    // Database column: cashierid
+                items: operation.data.items,
+                total: operation.data.total,
+                created_at: operation.data.created_at,
+                cashier: operation.data.cashier,
+                paymentmethod: operation.data.paymentMethod
+            };
+            const saleToSaveNoPM = {
+                receiptnumber: operation.data.receiptNumber,
+                cashierid: validCashierId,
                 items: operation.data.items,
                 total: operation.data.total,
                 created_at: operation.data.created_at,
                 cashier: operation.data.cashier
             };
             
-            const { data, error } = await supabase
-                .from('sales')
-                .insert(saleToSave)
-                .select();
+            let data, error;
+            try {
+                ({ data, error } = await supabase
+                    .from('sales')
+                    .insert(saleToSaveWithPM)
+                    .select());
+                if (error) throw error;
+            } catch (e) {
+                ({ data, error } = await supabase
+                    .from('sales')
+                    .insert(saleToSaveNoPM)
+                    .select());
+                if (error) throw error;
+            }
             
             if (error) throw error;
             
@@ -2429,6 +2507,8 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                 }
             } catch (parseError) {
                 console.error('Error parsing products from localStorage:', parseError);
+                products = [];
+                try { localStorage.removeItem(STORAGE_KEYS.PRODUCTS); } catch (_) {}
             }
         }
         
@@ -2442,6 +2522,8 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                 }
             } catch (parseError) {
                 console.error('Error parsing sales from localStorage:', parseError);
+                sales = [];
+                try { localStorage.removeItem(STORAGE_KEYS.SALES); } catch (_) {}
             }
         }
         
@@ -2455,6 +2537,8 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                 }
             } catch (parseError) {
                 console.error('Error parsing deleted sales from localStorage:', parseError);
+                deletedSales = [];
+                try { localStorage.removeItem(STORAGE_KEYS.DELETED_SALES); } catch (_) {}
             }
         }
         
@@ -2468,6 +2552,8 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                 }
             } catch (parseError) {
                 console.error('Error parsing users from localStorage:', parseError);
+                users = [];
+                try { localStorage.removeItem(STORAGE_KEYS.USERS); } catch (_) {}
             }
         }
         
@@ -2482,6 +2568,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                 }
             } catch (parseError) {
                 console.error('Error parsing settings from localStorage:', parseError);
+                try { localStorage.removeItem(STORAGE_KEYS.SETTINGS); } catch (_) {}
             }
         }
         
@@ -2495,6 +2582,8 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                 }
             } catch (parseError) {
                 console.error('Error parsing current user from localStorage:', parseError);
+                currentUser = null;
+                try { localStorage.removeItem(STORAGE_KEYS.CURRENT_USER); } catch (_) {}
             }
         }
         
@@ -2506,6 +2595,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
             } catch (parseError) {
                 console.error('Error parsing expenses from localStorage:', parseError);
                 expenses = [];
+                try { localStorage.removeItem(STORAGE_KEYS.EXPENSES); } catch (_) {}
             }
         }
         
@@ -2517,6 +2607,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
             } catch (parseError) {
                 console.error('Error parsing purchases from localStorage:', parseError);
                 purchases = [];
+                try { localStorage.removeItem(STORAGE_KEYS.PURCHASES); } catch (_) {}
             }
         }
         
@@ -2528,6 +2619,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
             } catch (parseError) {
                 console.error('Error parsing stock alerts from localStorage:', parseError);
                 stockAlerts = [];
+                try { localStorage.removeItem(STORAGE_KEYS.STOCK_ALERTS); } catch (_) {}
             }
         }
         
@@ -2539,6 +2631,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
             } catch (parseError) {
                 console.error('Error parsing profit data from localStorage:', parseError);
                 profitData = [];
+                try { localStorage.removeItem(STORAGE_KEYS.PROFIT_DATA); } catch (_) {}
             }
         }
     } catch (e) {
@@ -3402,23 +3495,24 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
     const periodEl = document.getElementById('report-period');
     const startEl = document.getElementById('report-start-date');
     const endEl = document.getElementById('report-end-date');
+    const debouncedGenerateReport = debounce(() => generateReport(), 150);
     if (periodEl) {
         periodEl.addEventListener('change', () => {
             const v = periodEl.value || 'day';
             const showRange = v === 'custom';
             if (startEl) startEl.style.display = showRange ? '' : 'none';
             if (endEl) endEl.style.display = showRange ? '' : 'none';
-            generateReport();
+            debouncedGenerateReport();
         });
     }
     if (reportDateEl) {
-        reportDateEl.addEventListener('change', generateReport);
+        reportDateEl.addEventListener('change', debouncedGenerateReport);
     }
-    if (startEl) startEl.addEventListener('change', generateReport);
-    if (endEl) endEl.addEventListener('change', generateReport);
+    if (startEl) startEl.addEventListener('change', debouncedGenerateReport);
+    if (endEl) endEl.addEventListener('change', debouncedGenerateReport);
     const generateBtn = document.getElementById('generate-report-btn');
     if (generateBtn) {
-        generateBtn.onclick = generateReport;
+        generateBtn.onclick = debouncedGenerateReport;
     }
     const productSearchEl = document.getElementById('report-product-search');
     if (productSearchEl) {
@@ -3437,21 +3531,25 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         if (reportsLoading) reportsLoading.style.display = 'none';
         
         if (sales.length === 0) {
+            isReportsLoading = true;
             DataModule.fetchSales().then(fetchedSales => {
                 sales = fetchedSales;
-                generateReport();
+                isReportsLoading = false;
+                debouncedGenerateReport();
             }).catch(error => {
                 console.error('Error fetching sales for report:', error);
-                generateReport();
+                isReportsLoading = false;
+                debouncedGenerateReport();
             });
         } else {
-            generateReport();
+            debouncedGenerateReport();
         }
     }, 0);
   }
   
   function generateReport() {
     try {
+        if (isReportsLoading) return;
         const reportDateEl = document.getElementById('report-date');
         const selectedDate = reportDateEl ? reportDateEl.value : new Date().toISOString().split('T')[0];
         let selectedDateObj = null;
@@ -3480,8 +3578,10 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         let totalSales = 0;
         let totalTransactions = 0;
         let totalItemsSold = 0;
-
-        combinedSales.forEach(sale => {
+        let totalCash = 0;
+        let totalPos = 0;
+        
+        activeSales.forEach(sale => {
             if (!sale || typeof sale !== 'object') return;
             totalSales += (typeof sale.total === 'number') ? sale.total : parseFloat(sale.total) || 0;
             totalTransactions++;
@@ -3490,19 +3590,32 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                     totalItemsSold += Number(item.quantity) || 0;
                 });
             }
+            const pm = ((sale.paymentMethod || sale.paymentmethod || '') + '').toLowerCase();
+            if (pm === 'cash') {
+                totalCash += (typeof sale.total === 'number') ? sale.total : parseFloat(sale.total) || 0;
+            } else if (pm === 'pos') {
+                totalPos += (typeof sale.total === 'number') ? sale.total : parseFloat(sale.total) || 0;
+            }
         });
         
         const totalSalesEl = document.getElementById('report-total-sales');
         const totalTransactionsEl = document.getElementById('report-transactions');
         const totalItemsSoldEl = document.getElementById('report-items-sold');
+        const totalCashEl = document.getElementById('report-cash-sales');
+        const totalPosEl = document.getElementById('report-pos-sales');
         
         if (totalSalesEl) totalSalesEl.textContent = formatCurrency(totalSales);
         if (totalTransactionsEl) totalTransactionsEl.textContent = totalTransactions;
         if (totalItemsSoldEl) totalItemsSoldEl.textContent = totalItemsSold;
+        if (totalCashEl) totalCashEl.textContent = formatCurrency(totalCash);
+        if (totalPosEl) totalPosEl.textContent = formatCurrency(totalPos);
+        lastOverallTotals = { total: totalSales, transactions: totalTransactions, items: totalItemsSold, cash: totalCash, pos: totalPos };
         
         let dailyTotal = 0;
         let dailyTransactions = 0;
         let dailyItems = 0;
+        let dailyCash = 0;
+        let dailyPos = 0;
         
         const dailySales = [];
         
@@ -3526,6 +3639,12 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                         dailyItems += item.quantity || 0;
                     });
                 }
+                const pm2 = ((sale.paymentMethod || sale.paymentmethod || '') + '').toLowerCase();
+                if (pm2 === 'cash') {
+                    dailyCash += sale.total || 0;
+                } else if (pm2 === 'pos') {
+                    dailyPos += sale.total || 0;
+                }
                 dailySales.push(sale);
             }
         });
@@ -3533,10 +3652,15 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         const dailyTotalEl = document.getElementById('daily-total-sales');
         const dailyTransactionsEl = document.getElementById('daily-transactions');
         const dailyItemsEl = document.getElementById('daily-items-sold');
+        const dailyCashEl = document.getElementById('daily-cash-sales');
+        const dailyPosEl = document.getElementById('daily-pos-sales');
         
         if (dailyTotalEl) dailyTotalEl.textContent = formatCurrency(dailyTotal);
         if (dailyTransactionsEl) dailyTransactionsEl.textContent = dailyTransactions;
         if (dailyItemsEl) dailyItemsEl.textContent = dailyItems;
+        if (dailyCashEl) dailyCashEl.textContent = formatCurrency(dailyCash);
+        if (dailyPosEl) dailyPosEl.textContent = formatCurrency(dailyPos);
+        lastDailyTotals = { total: dailyTotal, transactions: dailyTransactions, items: dailyItems, cash: dailyCash, pos: dailyPos };
         
         if (!dailySalesTableBody) {
             console.error('dailySalesTableBody element not found');
@@ -3551,48 +3675,52 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
             `;
         } else {
             dailySalesTableBody.innerHTML = '';
-            
             dailySales.sort((a, b) => {
                 const dateA = a.created_at ? new Date(a.created_at) : new Date(0);
                 const dateB = b.created_at ? new Date(b.created_at) : new Date(0);
                 return dateB - dateA;
             });
-            
-            dailySales.forEach(sale => {
-                const row = document.createElement('tr');
-                
-                let actionButtons = `
-                    <button class="btn-edit" onclick="viewSale('${sale.id}')" title="View Sale">
-                        <i class="fas fa-eye"></i>
-                    </button>
-                `;
-                
-                if (AuthModule.isAdmin()) {
-                    actionButtons += `
-                        <button class="btn-delete" onclick="deleteSale('${sale.id}')" title="Delete Sale">
-                            <i class="fas fa-trash"></i>
+            let idx = 0;
+            const chunkSize = 200;
+            function renderDailyChunk() {
+                let html = '';
+                for (let i = 0; i < chunkSize && idx < dailySales.length; i++, idx++) {
+                    const sale = dailySales[idx];
+                    let actionButtons = `
+                        <button class="btn-edit" onclick="viewSale('${sale.id}')" title="View Sale">
+                            <i class="fas fa-eye"></i>
                         </button>
                     `;
+                    if (AuthModule.isAdmin()) {
+                        actionButtons += `
+                            <button class="btn-delete" onclick="deleteSale('${sale.id}')" title="Delete Sale">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        `;
+                    }
+                    const totalItemsSold = Array.isArray(sale.items) 
+                        ? sale.items.reduce((sum, item) => sum + (item.quantity || 0), 0)
+                        : 0;
+                    html += `
+                        <tr>
+                            <td>${sale.receiptNumber || 'N/A'}</td>
+                            <td>${formatDate(sale.created_at)}</td>
+                            <td>${totalItemsSold}</td>
+                            <td>${formatCurrency(sale.total || 0)}</td>
+                            <td>
+                                <div class="action-buttons">
+                                    ${actionButtons}
+                                </div>
+                            </td>
+                        </tr>
+                    `;
                 }
-                
-                const totalItemsSold = Array.isArray(sale.items) 
-                    ? sale.items.reduce((sum, item) => sum + (item.quantity || 0), 0)
-                    : 0;
-                
-                row.innerHTML = `
-                    <td>${sale.receiptNumber || 'N/A'}</td>
-                    <td>${formatDate(sale.created_at)}</td>
-                    <td>${totalItemsSold}</td>
-                    <td>${formatCurrency(sale.total || 0)}</td>
-                    <td>
-                        <div class="action-buttons">
-                            ${actionButtons}
-                        </div>
-                    </td>
-                `;
-                
-                dailySalesTableBody.appendChild(row);
-            });
+                if (html) dailySalesTableBody.insertAdjacentHTML('beforeend', html);
+                if (idx < dailySales.length) {
+                    requestAnimationFrame(renderDailyChunk);
+                }
+            }
+            requestAnimationFrame(renderDailyChunk);
         }
         const periodEl2 = document.getElementById('report-period');
         const period = periodEl2 ? (periodEl2.value || 'day') : 'day';
@@ -3644,6 +3772,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         }
         const productCountMap = new Map();
         const categoryCountMap = new Map();
+        const productById = new Map(Array.isArray(products) ? products.map(p => [p.id, p]) : []);
         filteredActiveSales.forEach(sale => {
             if (!sale || !Array.isArray(sale.items)) return;
             sale.items.forEach(item => {
@@ -3662,7 +3791,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                     }
                 }
                 let category = 'Uncategorized';
-                const p = products.find(pp => pp.id === item.id);
+                const p = pid ? productById.get(pid) : null;
                 if (p && p.category) category = p.category;
                 const c = categoryCountMap.get(category);
                 if (c) {
@@ -3904,6 +4033,9 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
             validCashierId = '00000000-0000-0000-0000-000000000000';
         }
         
+        const pmEl = document.getElementById('payment-method');
+        const paymentMethod = pmEl && pmEl.value ? pmEl.value : 'cash';
+        
         const sale = {
             receiptNumber: generateReceiptNumber(),
             clientSaleId: 'client_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
@@ -3911,7 +4043,8 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
             total: cart.reduce((sum, item) => sum + (item.price * item.quantity), 0),
             created_at: new Date().toISOString(),
             cashier: currentUser.name,
-            cashierId: validCashierId
+            cashierId: validCashierId,
+            paymentMethod: paymentMethod
         };
         
         const result = await DataModule.saveSale(sale);
@@ -4002,6 +4135,10 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
             <div class="receipt-item">
                 <span>Cashier:</span>
                 <span>${sale.cashier}</span>
+            </div>
+            <div class="receipt-item">
+                <span>Payment:</span>
+                <span>${(sale.paymentMethod || 'cash').toUpperCase()}</span>
             </div>
         </div>
     `;
