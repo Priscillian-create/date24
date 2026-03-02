@@ -6452,8 +6452,17 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         const btn = document.getElementById('save-user-btn');
         btn.classList.add('loading');
         btn.disabled = true;
-        const res = await AuthModule.signUp(email, password, name, role);
-        if (res && res.success) {
+        const session = await supabase.auth.getSession();
+        const token = session.data.session?.access_token || '';
+        const res = await fetch(`${supabaseUrl}/functions/v1/create-user`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ name, email, password, role })
+        });
+        if (res.ok) {
             closeUserModal();
             await DataModule.fetchUsers();
             loadUsers();
@@ -6462,7 +6471,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
             const err = document.getElementById('user-create-error');
             if (err) {
                 err.style.display = 'block';
-                err.textContent = 'Failed to create user. Ensure server-side permissions are configured.';
+                err.textContent = 'Failed to create user. Ensure edge function is deployed and secrets are set.';
             }
         }
     } catch (e) {
