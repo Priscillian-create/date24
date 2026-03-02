@@ -43,6 +43,72 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
     });
   }
   
+  function loadStockCheck() {
+    if (stockDayBadge) {
+        const d = new Date();
+        const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+        stockDayBadge.textContent = d.getDay() === 4 ? 'Today is Thursday' : 'Today is ' + days[d.getDay()];
+    }
+    if (stockLastUpdated) {
+        stockLastUpdated.textContent = new Date().toLocaleString();
+    }
+    const render = (list) => {
+        if (!stockTableBody) return;
+        const items = (list || []).filter(p => p && !p.deleted);
+        if (items.length === 0) {
+            stockTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center;">No products</td></tr>';
+            return;
+        }
+        // Group by category
+        const groups = new Map();
+        for (const p of items) {
+            const cat = (p.category || 'Uncategorized').toString();
+            if (!groups.has(cat)) groups.set(cat, []);
+            groups.get(cat).push(p);
+        }
+        // Sort categories and products
+        const categories = Array.from(groups.keys()).sort((a,b) => a.localeCompare(b));
+        categories.forEach(cat => {
+            groups.get(cat).sort((a,b) => {
+                const an = (a.name || '').toString().toLowerCase();
+                const bn = (b.name || '').toString().toLowerCase();
+                return an.localeCompare(bn);
+            });
+        });
+        // Render
+        stockTableBody.innerHTML = '';
+        const frag = document.createDocumentFragment();
+        categories.forEach(cat => {
+            const list = groups.get(cat);
+            const totalStock = list.reduce((s,p) => s + (Number(p.stock) || 0), 0);
+            const header = document.createElement('tr');
+            header.style.background = '#f8f9fa';
+            header.style.fontWeight = '700';
+            header.innerHTML = '<td colspan="5">' + cat + ' — ' + list.length + ' items, total stock ' + totalStock + '</td>';
+            frag.appendChild(header);
+            list.forEach(p => {
+                const tr = document.createElement('tr');
+                tr.innerHTML =
+                    '<td>' + (p.name || '') + '</td>' +
+                    '<td>' + (p.category || '') + '</td>' +
+                    '<td>' + (p.stock != null ? p.stock : '') + '</td>' +
+                    '<td>' + (p.barcode || '') + '</td>' +
+                    '<td>' + formatDate(p.expiryDate, true) + '</td>';
+                frag.appendChild(tr);
+            });
+        });
+        stockTableBody.appendChild(frag);
+    };
+    if (isOnline) {
+        DataModule.fetchAllProducts().then(() => {
+            dedupeProducts();
+            render(products);
+        }).catch(() => render(products));
+    } else {
+        render(products);
+    }
+  }
+
   // Supabase initialization
   const supabaseUrl = 'https://ieriphdzlbuzqqwrymwn.supabase.co';
   const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllcmlwaGR6bGJ1enFxd3J5bXduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIzMDU1MTgsImV4cCI6MjA3Nzg4MTUxOH0.bvbs6joSxf1u9U8SlaAYmjve-N6ArNYcNMtnG6-N_HU';
@@ -143,6 +209,10 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
   const notificationMessage = document.getElementById('notification-message');
   const mobileMenuBtn = document.getElementById('mobile-menu-btn');
   const sidebar = document.getElementById('sidebar');
+  const stockTableBody = document.getElementById('stock-table-body');
+  const stockLastUpdated = document.getElementById('stock-last-updated');
+  const stockDayBadge = document.getElementById('stock-day-badge');
+  const printStockBtn = document.getElementById('print-stock-btn');
   let currentProductSalesRows = [];
   let currentCategorySalesRows = [];
   
@@ -2948,6 +3018,13 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         loadSales();
         setupRealtimeListeners();
         try { generateReport(); } catch (_) {}
+        try {
+            const d = new Date();
+            if (d.getDay() === 4) {
+                showPage('stock');
+                showNotification('Thursday stock check is ready', 'info');
+            }
+        } catch (_) {}
     } catch (error) {
         console.error('Error loading initial data:', error);
         showNotification('Error loading data. Using offline cache.', 'warning');
@@ -3080,6 +3157,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         'pos': 'Point of Sale',
         'inventory': 'Inventory Management',
         'reports': 'Sales Reports',
+        'stock': 'Stock Check',
         'expenses': 'Expense Management',
         'purchases': 'Purchase Management',
         'analytics': 'Business Analytics',
@@ -3093,6 +3171,8 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         loadInventory();
     } else if (pageName === 'reports') {
         loadReports();
+    } else if (pageName === 'stock') {
+        loadStockCheck();
     } else if (pageName === 'account') {
         loadAccount();
     } else if (pageName === 'expenses') {
@@ -5855,6 +5935,58 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         applyProductSearch(productSearchEl.value);
     }, 150);
     productSearchEl.addEventListener('input', handler);
+  }
+
+  const stockSearchEl = document.getElementById('stock-search');
+  if (stockSearchEl) {
+    const handler = debounce(() => {
+        const term = (stockSearchEl.value || '').toLowerCase();
+        const list = products.filter(p => {
+            const n = (p && p.name ? p.name : '').toLowerCase();
+            const c = (p && p.category ? p.category : '').toLowerCase();
+            const b = (p && typeof p.barcode === 'string') ? p.barcode.toLowerCase() : '';
+            return n.includes(term) || c.includes(term) || b.includes(term);
+        });
+        if (!stockTableBody) return;
+        if (list.length === 0) {
+            stockTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center;">No products</td></tr>';
+            return;
+        }
+        const groups = new Map();
+        list.forEach(p => {
+            const cat = (p.category || 'Uncategorized').toString();
+            if (!groups.has(cat)) groups.set(cat, []);
+            groups.get(cat).push(p);
+        });
+        const categories = Array.from(groups.keys()).sort((a,b) => a.localeCompare(b));
+        stockTableBody.innerHTML = '';
+        const frag = document.createDocumentFragment();
+        categories.forEach(cat => {
+            const items = groups.get(cat).slice().sort((a,b) => (a.name||'').localeCompare(b.name||''));
+            const totalStock = items.reduce((s,p) => s + (Number(p.stock)||0), 0);
+            const header = document.createElement('tr');
+            header.style.background = '#f8f9fa';
+            header.style.fontWeight = '700';
+            header.innerHTML = '<td colspan=\"5\">' + cat + ' — ' + items.length + ' items, total stock ' + totalStock + '</td>';
+            frag.appendChild(header);
+            items.forEach(p => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = '<td>' + (p.name || '') + '</td>' +
+                               '<td>' + (p.category || '') + '</td>' +
+                               '<td>' + (p.stock != null ? p.stock : '') + '</td>' +
+                               '<td>' + (p.barcode || '') + '</td>' +
+                               '<td>' + formatDate(p.expiryDate, true) + '</td>';
+                frag.appendChild(tr);
+            });
+        });
+        stockTableBody.appendChild(frag);
+    }, 150);
+    stockSearchEl.addEventListener('input', handler);
+  }
+  if (printStockBtn) {
+    printStockBtn.addEventListener('click', () => {
+        window.print();
+    });
   }
   
   // Inventory search

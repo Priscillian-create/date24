@@ -292,6 +292,12 @@
                         <span>Sales Reports</span>
                     </a>
                 </li>
+                <li class="nav-item">
+                    <a href="#" class="nav-link" data-page="stock">
+                        <i class="fas fa-clipboard-list"></i>
+                        <span>Stock Check</span>
+                    </a>
+                </li>
                 <!-- NEW: Added navigation items for new features -->
                 <li class="nav-item">
                     <a href="#" class="nav-link" data-page="expenses">
@@ -695,6 +701,45 @@
                                 </tr>
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            </div>
+
+            <div id="stock-page" class="page-content" style="display: none;">
+                <div class="inventory-container">
+                    <div class="inventory-header">
+                        <h3>Stock Check</h3>
+                        <div class="page-actions">
+                            <span id="stock-day-badge"></span>
+                            <button class="btn btn-outline" id="print-stock-btn"><i class="fas fa-print"></i> Print</button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <div class="table-header">
+                            <h3>All Products and Quantities</h3>
+                            <div class="table-actions">
+                                <input type="text" id="stock-search" name="stock-search" placeholder="Search products...">
+                            </div>
+                        </div>
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Product</th>
+                                    <th>Category</th>
+                                    <th>Stock</th>
+                                    <th>Barcode</th>
+                                    <th>Expiry</th>
+                                </tr>
+                            </thead>
+                            <tbody id="stock-table-body">
+                                <tr>
+                                    <td colspan="5" style="text-align: center;">No products</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div class="table-footer">
+                            <small>Last updated: <span id="stock-last-updated">-</span></small>
+                        </div>
                     </div>
                 </div>
             </div>
