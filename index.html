@@ -999,7 +999,12 @@
                 
                 <!-- User Management Section (Admin Only) -->
                 <div class="users-container" id="users-container" style="display: none;">
-                    <h3>Manage Users</h3>
+                    <div class="inventory-header">
+                        <h3>Manage Users</h3>
+                        <button class="btn btn-primary" id="add-user-btn">
+                            <i class="fas fa-user-plus"></i> Add User
+                        </button>
+                    </div>
                     <div class="users-list" id="users-list">
                         <!-- Users will be loaded here -->
                     </div>
@@ -1060,6 +1065,48 @@
         </div>
     </div>
     
+    <!-- Add User Modal -->
+    <div id="user-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="user-modal-title">Add User</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="user-form">
+                    <div class="form-group">
+                        <label for="user-name-input">Full Name</label>
+                        <input type="text" id="user-name-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="user-email-input">Email</label>
+                        <input type="email" id="user-email-input" required autocomplete="username">
+                    </div>
+                    <div class="form-group">
+                        <label for="user-role-input">Role</label>
+                        <select id="user-role-input" required>
+                            <option value="cashier" selected>Cashier</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="user-password-input">Password</label>
+                        <input type="password" id="user-password-input" required autocomplete="new-password">
+                    </div>
+                    <div class="form-group">
+                        <label for="user-password-confirm-input">Confirm Password</label>
+                        <input type="password" id="user-password-confirm-input" required autocomplete="new-password">
+                    </div>
+                </form>
+                <div class="login-error" id="user-create-error" style="display: none;">-</div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" id="cancel-user-btn">Cancel</button>
+                <button class="btn btn-primary" id="save-user-btn">Create User</button>
+            </div>
+        </div>
+    </div>
+
     <!-- NEW: Expense Modal -->
     <div id="expense-modal" class="modal">
         <div class="modal-content">

@@ -633,6 +633,22 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
   
   // Data Module
   const DataModule = {
+    async fetchUsers() {
+        try {
+            if (isOnline && AuthModule.isAdmin()) {
+                const { data, error } = await supabase.from('users').select('*').order('created_at', { ascending: false });
+                if (error) throw error;
+                users = Array.isArray(data) ? data : [];
+                saveToLocalStorage();
+                return users;
+            }
+            return users;
+        } catch (error) {
+            console.error('Error fetching users:', error);
+            showNotification('Unable to load users list', 'warning');
+            return users;
+        }
+    },
     async fetchProducts(offset = 0, limit = PRODUCTS_PAGE_SIZE) {
         try {
             if (isOnline) {
@@ -2975,6 +2991,11 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
             btn.style.display = AuthModule.isAdmin() ? 'block' : 'none';
         });
         
+        if (!AuthModule.isAdmin()) {
+            document.querySelectorAll('.nav-link[data-page="expenses"], .nav-link[data-page="purchases"], .nav-link[data-page="analytics"]')
+                .forEach(el => el && el.parentElement && (el.parentElement.style.display = 'none'));
+        }
+        
         initChangePasswordForm();
     }
     
@@ -3968,7 +3989,10 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         }
         
         if (AuthModule.isAdmin()) {
-            loadUsers();
+            (async () => {
+                await DataModule.fetchUsers();
+                loadUsers();
+            })();
         }
     }, 500);
   }
@@ -3995,6 +4019,10 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                 <span class="role-badge ${user.role}">${user.role}</span>
             </div>
             <div class="action-buttons">
+                <select onchange="updateUserRole('${user.id}', this.value)">
+                    <option value="cashier" ${user.role === 'cashier' ? 'selected' : ''}>Cashier</option>
+                    <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option>
+                </select>
                 <button class="btn-delete" onclick="deleteUser('${user.id}')">
                     <i class="fas fa-trash"></i>
                 </button>
@@ -4003,6 +4031,44 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         
         usersList.appendChild(userCard);
     });
+  }
+  
+  async function updateUserRole(userId, newRole) {
+    try {
+        if (!AuthModule.isAdmin()) {
+            showNotification('Only admins can change roles', 'error');
+            return;
+        }
+        const { error } = await supabase.from('users').update({ role: newRole }).eq('id', userId);
+        if (error) throw error;
+        const u = users.find(u => u.id === userId);
+        if (u) u.role = newRole;
+        saveToLocalStorage();
+        loadUsers();
+        showNotification('User role updated', 'success');
+    } catch (e) {
+        console.error('updateUserRole error:', e);
+        showNotification('Failed to update role: ' + (e.message || ''), 'error');
+    }
+  }
+  
+  async function deleteUser(userId) {
+    try {
+        if (!AuthModule.isAdmin()) {
+            showNotification('Only admins can delete users', 'error');
+            return;
+        }
+        if (!confirm('Delete this user? This only removes the record in users table.')) return;
+        const { error } = await supabase.from('users').delete().eq('id', userId);
+        if (error) throw error;
+        users = users.filter(u => u.id !== userId);
+        saveToLocalStorage();
+        loadUsers();
+        showNotification('User removed', 'success');
+    } catch (e) {
+        console.error('deleteUser error:', e);
+        showNotification('Failed to delete user: ' + (e.message || ''), 'error');
+    }
   }
   
   // Cart Functions
@@ -6348,6 +6414,75 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
   document.querySelector('#purchase-modal .modal-close').addEventListener('click', closePurchaseModal);
   document.getElementById('cancel-purchase-btn').addEventListener('click', closePurchaseModal);
   document.getElementById('save-purchase-btn').addEventListener('click', savePurchase);
+  
+  // Admin: Add User modal
+  function openUserModal() {
+    if (!AuthModule.isAdmin()) {
+        showNotification('Only admins can create users', 'error');
+        return;
+    }
+    const f = document.getElementById('user-form');
+    if (f) f.reset();
+    const err = document.getElementById('user-create-error');
+    if (err) { err.style.display = 'none'; err.textContent = '-'; }
+    document.getElementById('user-modal').style.display = 'flex';
+  }
+  function closeUserModal() {
+    document.getElementById('user-modal').style.display = 'none';
+  }
+  async function saveUserAdmin() {
+    try {
+        if (!AuthModule.isAdmin()) {
+            showNotification('Only admins can create users', 'error');
+            return;
+        }
+        const name = document.getElementById('user-name-input').value.trim();
+        const email = document.getElementById('user-email-input').value.trim();
+        const role = document.getElementById('user-role-input').value;
+        const password = document.getElementById('user-password-input').value;
+        const confirm = document.getElementById('user-password-confirm-input').value;
+        if (!name || !email || !password) {
+            showNotification('Please fill all fields', 'error');
+            return;
+        }
+        if (password !== confirm) {
+            showNotification('Passwords do not match', 'error');
+            return;
+        }
+        const btn = document.getElementById('save-user-btn');
+        btn.classList.add('loading');
+        btn.disabled = true;
+        const res = await AuthModule.signUp(email, password, name, role);
+        if (res && res.success) {
+            closeUserModal();
+            await DataModule.fetchUsers();
+            loadUsers();
+            showNotification('User created', 'success');
+        } else {
+            const err = document.getElementById('user-create-error');
+            if (err) {
+                err.style.display = 'block';
+                err.textContent = 'Failed to create user. Ensure server-side permissions are configured.';
+            }
+        }
+    } catch (e) {
+        const err = document.getElementById('user-create-error');
+        if (err) {
+            err.style.display = 'block';
+            err.textContent = e && e.message ? e.message : 'Failed to create user';
+        }
+    } finally {
+        const btn = document.getElementById('save-user-btn');
+        btn.classList.remove('loading');
+        btn.disabled = false;
+    }
+  }
+  const addUserBtn = document.getElementById('add-user-btn');
+  if (addUserBtn) addUserBtn.addEventListener('click', openUserModal);
+  const cancelUserBtn = document.getElementById('cancel-user-btn');
+  if (cancelUserBtn) cancelUserBtn.addEventListener('click', closeUserModal);
+  const saveUserBtn = document.getElementById('save-user-btn');
+  if (saveUserBtn) saveUserBtn.addEventListener('click', saveUserAdmin);
   
   // Initialize app
   async function init() {
