@@ -743,18 +743,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                     if (!data || data.length < limit) break;
                     offset += limit;
                 }
-                const localDeletedIds = new Set(products.filter(p => p && p.deleted).map(p => p.id));
-                const serverMap = new Map(acc.map(p => [p.id, p]));
-                const merged = [];
-                acc.forEach(sp => {
-                    const lp = products.find(p => p.id === sp.id);
-                    if (lp && lp.deleted) return;
-                    merged.push(sp);
-                });
-                products.forEach(lp => {
-                    if (!serverMap.has(lp.id) && !lp.deleted) merged.push(lp);
-                });
-                products = merged;
+                products = DataModule.mergeProductData(acc);
                 dedupeProducts();
                 productsHasMore = false;
                 productsOffset = products.length;
@@ -3002,7 +2991,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
     try {
         // Fetch products and sales in parallel
         const [productsResult, salesResult] = await Promise.allSettled([
-            DataModule.fetchAllProducts(),
+            DataModule.fetchProducts(0, PRODUCTS_PAGE_SIZE),
             DataModule.fetchSales()
         ]);
         
@@ -3038,7 +3027,9 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         loadProducts();
         loadSales();
         setupRealtimeListeners();
-        try { generateReport(); } catch (_) {}
+        if (currentPage === 'reports') {
+            try { generateReport(); } catch (_) {}
+        }
         try {
             const d = new Date();
             if (d.getDay() === 4) {
@@ -4200,6 +4191,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                 const product = products.find(p => p.id === cartItem.id);
                 if (product) {
                     product.stock -= cartItem.quantity;
+                    product.updated_at = new Date().toISOString();
                     
                     addToSyncQueue({
                         type: 'saveProduct',
@@ -4215,6 +4207,12 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
             
             // Check for new alerts after updating stock
             checkAndGenerateAlerts();
+            if (currentPage === 'inventory') {
+                loadInventory();
+            }
+            if (currentPage === 'stock') {
+                loadStockCheck();
+            }
             
             showReceipt(result.sale);
             
