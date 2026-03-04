@@ -2,8 +2,8 @@
 if ('serviceWorker' in navigator && !window.location.hostname.includes('stackblitz')) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('./service-worker.js')
-            .then(registration => console.log('ServiceWorker registered:', registration.scope))
-            .catch(err => console.log('ServiceWorker registration failed:', err));
+            .then(() => {})
+            .catch(() => {});
     });
   }
   window.addEventListener('error', (e) => {
@@ -528,12 +528,9 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                 } else {
                     currentUser = fallbackUser;
                     try {
-                        const { data: newUser } = await supabase
+                        await supabase
                             .from('users')
-                            .insert(fallbackUser)
-                            .select()
-                            .maybeSingle();
-                        if (newUser) currentUser = newUser;
+                            .insert(fallbackUser);
                     } catch (insertError) {
                         console.warn('Could not create user in database:', insertError);
                     }
@@ -3252,60 +3249,15 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
     }
     
     try {
-        // Fetch products and sales in parallel
-        const [productsResult, salesResult] = await Promise.allSettled([
-            DataModule.fetchAllProducts(),
-            DataModule.fetchSales()
-        ]);
-        
-        if (productsResult.status === 'fulfilled') {
-            products = productsResult.value;
+        const needInitialProducts = isOnline && products.length === 0;
+        if (needInitialProducts) {
+            await DataModule.fetchProducts(0, PRODUCTS_PAGE_SIZE);
         }
-        
-        if (salesResult.status === 'fulfilled') {
-            sales = salesResult.value;
-        } else {
-            validateSalesData();
-        }
-        
-        {
-            const deletedSalesResult = await DataModule.fetchDeletedSales();
-            if (deletedSalesResult) {
-                deletedSales = deletedSalesResult;
-            }
-        }
-        
-        // Load expenses and purchases
-        if (expenses.length === 0) {
-            await DataModule.fetchExpenses();
-        }
-        
-  
-        if (purchases.length === 0) {
-            await DataModule.fetchPurchases();
-        }
-        
-        scheduleRender(() => checkAndGenerateAlerts());
-        
         loadProducts();
-        loadSales();
         setupRealtimeListeners();
-        try { generateReport(); } catch (_) {}
-        try {
-            const d = new Date();
-            if (d.getDay() === 4) {
-                showPage('stock');
-                showNotification('Thursday stock check is ready', 'info');
-            }
-        } catch (_) {}
-    } catch (error) {
-        console.error('Error loading initial data:', error);
-        showNotification('Error loading data. Using offline cache.', 'warning');
-        
+    } catch (_) {
         loadProducts();
-        loadSales();
         setupRealtimeListeners();
-        try { generateReport(); } catch (_) {}
     }
   }
   
