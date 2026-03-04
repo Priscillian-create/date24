@@ -3930,15 +3930,15 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
     }
     
     isReportsLoading = true;
-    const today = new Date().toISOString().split('T')[0];
-    const reportDateEl = document.getElementById('report-date');
-    if (reportDateEl && !reportDateEl.value) reportDateEl.value = today;
-    const periodEl = document.getElementById('report-period');
-    const startEl = document.getElementById('report-start-date');
-    const endEl = document.getElementById('report-end-date');
-    let selectedDateObj = reportDateEl && reportDateEl.value ? new Date(reportDateEl.value) : new Date();
+    const todayR = new Date().toISOString().split('T')[0];
+    const reportDateElR = document.getElementById('report-date');
+    if (reportDateElR && !reportDateElR.value) reportDateElR.value = todayR;
+    const periodElR = document.getElementById('report-period');
+    const startElR = document.getElementById('report-start-date');
+    const endElR = document.getElementById('report-end-date');
+    let selectedDateObj = reportDateElR && reportDateElR.value ? new Date(reportDateElR.value) : new Date();
     let rangeStart, rangeEnd;
-    const v = periodEl ? (periodEl.value || 'day') : 'day';
+    const v = periodElR ? (periodElR.value || 'day') : 'day';
     if (v === 'day') {
         rangeStart = new Date(selectedDateObj); rangeStart.setHours(0,0,0,0);
         rangeEnd = new Date(selectedDateObj); rangeEnd.setHours(23,59,59,999);
@@ -3952,8 +3952,8 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         rangeStart = new Date(d.getFullYear(), d.getMonth(), 1); rangeStart.setHours(0,0,0,0);
         rangeEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0); rangeEnd.setHours(23,59,59,999);
     } else {
-        const s = startEl && startEl.value ? new Date(startEl.value) : null;
-        const e = endEl && endEl.value ? new Date(endEl.value) : null;
+        const s = startElR && startElR.value ? new Date(startElR.value) : null;
+        const e = endElR && endElR.value ? new Date(endElR.value) : null;
         if (s) { rangeStart = new Date(s); rangeStart.setHours(0,0,0,0); }
         if (e) { rangeEnd = new Date(e); rangeEnd.setHours(23,59,59,999); }
     }
