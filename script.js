@@ -679,7 +679,17 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                 page++;
             }
             if (acc.length) {
-                sales = acc.filter(s => !s.deleted && !s.deleted_at && !s.deletedAt);
+                const normalized = acc.map(sale => {
+                    const out = { ...sale };
+                    if (!out.receiptNumber && out.receiptnumber) out.receiptNumber = out.receiptnumber;
+                    if (!Array.isArray(out.items)) out.items = [];
+                    if (typeof out.total !== 'number') out.total = parseFloat(out.total) || 0;
+                    if (!out.created_at) out.created_at = new Date().toISOString();
+                    const pm = ((out.paymentMethod || out.paymentmethod || '') + '').toLowerCase();
+                    if (!out.paymentMethod && pm) out.paymentMethod = pm;
+                    return out;
+                }).filter(s => !s.deleted && !s.deleted_at && !s.deletedAt);
+                sales = normalized;
                 saveToLocalStorage();
             }
             return sales;
