@@ -1606,18 +1606,31 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                         created_at: sale.created_at,
                         cashier: sale.cashier
                     };
-                    
+                    const { data: exist, error: existErr } = await supabase
+                        .from('sales')
+                        .select('id')
+                        .eq('receiptnumber', sale.receiptNumber)
+                        .limit(1);
+                    if (!existErr && Array.isArray(exist) && exist.length > 0) {
+                        const index = sales.findIndex(s => s.receiptNumber === sale.receiptNumber);
+                        if (index >= 0) {
+                            sales[index].id = exist[0].id;
+                            sales[index].cashierId = validCashierId;
+                            saveToLocalStorage();
+                        }
+                        return { success: true, sale: { ...sale, id: exist[0].id, cashierId: validCashierId } };
+                    }
                     let data, error;
                     try {
                         ({ data, error } = await supabase
                             .from('sales')
-                            .insert(saleToSaveWithPM)
+                            .upsert(saleToSaveWithPM, { onConflict: 'receiptnumber' })
                             .select());
                         if (error) throw error;
                     } catch (e) {
                         ({ data, error } = await supabase
                             .from('sales')
-                            .insert(saleToSaveNoPM)
+                            .upsert(saleToSaveNoPM, { onConflict: 'receiptnumber' })
                             .select());
                         if (error) throw error;
                     }
@@ -2053,13 +2066,13 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
             try {
                 ({ data, error } = await supabase
                     .from('sales')
-                    .insert(saleToSaveWithPM)
+                    .upsert(saleToSaveWithPM, { onConflict: 'receiptnumber' })
                     .select());
                 if (error) throw error;
             } catch (e) {
                 ({ data, error } = await supabase
                     .from('sales')
-                    .insert(saleToSaveNoPM)
+                    .upsert(saleToSaveNoPM, { onConflict: 'receiptnumber' })
                     .select());
                 if (error) throw error;
             }
@@ -2134,14 +2147,26 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                 };
                 // Check if a matching product already exists (avoid double insert)
                 try {
-                    const { data: existing } = await supabase
-                        .from('products')
-                        .select('id')
-                        .eq('name', productToSave.name)
-                        .eq('category', productToSave.category)
-                        .eq('price', productToSave.price);
-                    if (existing && existing.length > 0) {
-                        const existId = existing[0].id;
+                    let existingMatch = null;
+                    if (productToSave.barcode) {
+                        const { data: byBarcode } = await supabase
+                            .from('products')
+                            .select('id')
+                            .eq('barcode', productToSave.barcode)
+                            .limit(1);
+                        if (byBarcode && byBarcode.length > 0) existingMatch = byBarcode[0];
+                    }
+                    if (!existingMatch) {
+                        const { data: bySignature } = await supabase
+                            .from('products')
+                            .select('id')
+                            .eq('name', productToSave.name)
+                            .eq('category', productToSave.category)
+                            .eq('price', productToSave.price);
+                        if (bySignature && bySignature.length > 0) existingMatch = bySignature[0];
+                    }
+                    if (existingMatch) {
+                        const existId = existingMatch.id;
                         const localIdx = products.findIndex(p => p.id === operation.data.id);
                         if (localIdx !== -1) {
                             products[localIdx].id = existId;
@@ -2154,7 +2179,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
   
                 const { data, error } = await supabase
                     .from('products')
-                    .insert(productToSave)
+                    .upsert(productToSave, { onConflict: productToSave.barcode ? 'barcode' : undefined })
                     .select();
                 
                 if (error) throw error;
@@ -3206,13 +3231,16 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
   }
   
   function generateReceiptNumber() {
-    const date = new Date();
-    const year = date.getFullYear().toString().substr(-2);
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const day = date.getDate().toString().padStart(2, '0');
-    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    
-    return `R${year}${month}${day}${random}`;
+    const d = new Date();
+    const y = d.getFullYear().toString().slice(-2);
+    const m = (d.getMonth() + 1).toString().padStart(2, '0');
+    const day = d.getDate().toString().padStart(2, '0');
+    const h = d.getHours().toString().padStart(2, '0');
+    const mi = d.getMinutes().toString().padStart(2, '0');
+    const s = d.getSeconds().toString().padStart(2, '0');
+    const ms = d.getMilliseconds().toString().padStart(3, '0');
+    const rnd = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+    return `R${y}${m}${day}${h}${mi}${s}${ms}${rnd}`;
   }
   
   // Page Navigation
