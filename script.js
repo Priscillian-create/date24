@@ -3898,24 +3898,28 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         });
     }
     
-    setTimeout(() => {
-        if (reportsLoading) reportsLoading.style.display = 'none';
-        
-        if (sales.length === 0) {
-            isReportsLoading = true;
-            DataModule.fetchSales().then(fetchedSales => {
-                sales = fetchedSales;
-                isReportsLoading = false;
-                debouncedGenerateReport();
-            }).catch(error => {
-                console.error('Error fetching sales for report:', error);
-                isReportsLoading = false;
-                debouncedGenerateReport();
-            });
-        } else {
-            debouncedGenerateReport();
+    isReportsLoading = true;
+    Promise.allSettled([
+        DataModule.fetchSales(),
+        DataModule.fetchDeletedSales()
+    ]).then(results => {
+        const salesRes = results[0];
+        const deletedRes = results[1];
+        if (salesRes.status === 'fulfilled' && Array.isArray(salesRes.value)) {
+            sales = salesRes.value;
         }
-    }, 0);
+        if (deletedRes.status === 'fulfilled' && Array.isArray(deletedRes.value)) {
+            deletedSales = deletedRes.value;
+        }
+        isReportsLoading = false;
+        if (reportsLoading) reportsLoading.style.display = 'none';
+        updateSalesTables();
+        debouncedGenerateReport();
+    }).catch(() => {
+        isReportsLoading = false;
+        if (reportsLoading) reportsLoading.style.display = 'none';
+        debouncedGenerateReport();
+    });
   }
   
   function generateReport() {
