@@ -573,7 +573,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
     },
     
     isAdmin() {
-        return currentUser && currentUser.role === 'admin';
+        return !!(currentUser && (currentUser.role || '').toString().toLowerCase() === 'admin');
     },
     
     onAuthStateChanged(callback) {
@@ -757,12 +757,23 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                 const acc = [];
                 let offset = 0;
                 const limit = PRODUCTS_PAGE_SIZE;
+                let withUpdatedAt = true;
                 while (true) {
-                    const { data, error } = await supabase
-                        .from('products')
-                        .select('id,name,category,price,stock,expirydate,barcode,deleted,updated_at')
-                        .range(offset, offset + limit - 1);
-                    if (error) throw error;
+                    let data, error;
+                    try {
+                        ({ data, error } = await supabase
+                            .from('products')
+                            .select('id,name,category,price,stock,expirydate,barcode,deleted,updated_at')
+                            .range(offset, offset + limit - 1));
+                        if (error) throw error;
+                    } catch (e) {
+                        withUpdatedAt = false;
+                        ({ data, error } = await supabase
+                            .from('products')
+                            .select('id,name,category,price,stock,expirydate,barcode,deleted')
+                            .range(offset, offset + limit - 1));
+                        if (error) throw error;
+                    }
                     const batch = (data || []).map(p => {
                         if (p.expirydate && !p.expiryDate) p.expiryDate = p.expirydate;
                         return p;
@@ -798,13 +809,15 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                 dedupeProducts();
                 productsHasMore = false;
                 productsOffset = products.length;
-                try {
-                    const maxTs = acc.reduce((m, p) => {
-                        const t = p && p.updated_at ? new Date(p.updated_at).toISOString() : null;
-                        return t && t > m ? t : m;
-                    }, lastProductsSyncTs || '1970-01-01T00:00:00.000Z');
-                    lastProductsSyncTs = maxTs;
-                } catch (_) {}
+                if (withUpdatedAt) {
+                    try {
+                        const maxTs = acc.reduce((m, p) => {
+                            const t = p && p.updated_at ? new Date(p.updated_at).toISOString() : null;
+                            return t && t > m ? t : m;
+                        }, lastProductsSyncTs || '1970-01-01T00:00:00.000Z');
+                        lastProductsSyncTs = maxTs;
+                    } catch (_) {}
+                }
                 saveToLocalStorage();
                 return products;
             }
@@ -821,14 +834,21 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
             const limit = PRODUCTS_PAGE_SIZE;
             let page = 0;
             const updates = [];
+            let usedUpdatedAt = true;
             while (true) {
-                const { data, error } = await supabase
-                    .from('products')
-                    .select('id,name,category,price,stock,expirydate,barcode,deleted,updated_at')
-                    .gt('updated_at', sinceTs || '1970-01-01T00:00:00.000Z')
-                    .order('updated_at', { ascending: true })
-                    .range(page * limit, page * limit + limit - 1);
-                if (error) throw error;
+                let data, error;
+                try {
+                    ({ data, error } = await supabase
+                        .from('products')
+                        .select('id,name,category,price,stock,expirydate,barcode,deleted,updated_at')
+                        .gt('updated_at', sinceTs || '1970-01-01T00:00:00.000Z')
+                        .order('updated_at', { ascending: true })
+                        .range(page * limit, page * limit + limit - 1));
+                    if (error) throw error;
+                } catch (e) {
+                    usedUpdatedAt = false;
+                    break;
+                }
                 if (!data || data.length === 0) break;
                 const batch = data.map(p => {
                     if (p.expirydate && !p.expiryDate) p.expiryDate = p.expirydate;
@@ -838,7 +858,14 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                 if (data.length < limit) break;
                 page++;
             }
-            if (updates.length === 0) return products;
+            if (!usedUpdatedAt) {
+                await DataModule.fetchAllProducts();
+                return products;
+            }
+            if (updates.length === 0) {
+                if (products.length === 0) await DataModule.fetchAllProducts();
+                return products;
+            }
             const byId = new Map(products.map(p => [p.id, p]));
             updates.forEach(u => {
                 const exist = byId.get(u.id);
@@ -860,6 +887,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
             return products;
         } catch (e) {
             console.error('Error in fetchProductsSince:', e);
+            try { await DataModule.fetchAllProducts(); } catch(_) {}
             return products;
         }
     },
@@ -3191,8 +3219,8 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
             usersContainer.style.display = 'none';
         }
         
+        await refreshCurrentUserFromDB();
         applyRoleUIRestrictions();
-        refreshCurrentUserFromDB();
         
         if (!AuthModule.isAdmin()) {
             document.querySelectorAll('.nav-link[data-page="expenses"], .nav-link[data-page="purchases"], .nav-link[data-page="analytics"]')
