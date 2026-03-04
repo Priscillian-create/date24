@@ -100,10 +100,12 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         stockTableBody.appendChild(frag);
     };
     if (isOnline) {
-        DataModule.fetchAllProducts().then(() => {
-            dedupeProducts();
-            render(products);
-        }).catch(() => render(products));
+        const doRender = () => { dedupeProducts(); render(products); };
+        if (products.length === 0) {
+            DataModule.fetchAllProducts().then(doRender).catch(doRender);
+        } else {
+            DataModule.fetchProductsSince(lastProductsSyncTs).then(doRender).catch(doRender);
+        }
     } else {
         render(products);
     }
@@ -656,6 +658,35 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
   
   // Data Module
   const DataModule = {
+    async fetchSalesForRange(startIso, endIso) {
+        try {
+            if (!isOnline) return sales;
+            const limit = PRODUCTS_PAGE_SIZE;
+            let page = 0;
+            const acc = [];
+            while (true) {
+                const { data, error } = await supabase
+                    .from('sales')
+                    .select('*')
+                    .gte('created_at', startIso)
+                    .lte('created_at', endIso)
+                    .order('created_at', { ascending: false })
+                    .range(page * limit, page * limit + limit - 1);
+                if (error) break;
+                if (!data || data.length === 0) break;
+                acc.push(...data);
+                if (data.length < limit) break;
+                page++;
+            }
+            if (acc.length) {
+                sales = acc.filter(s => !s.deleted && !s.deleted_at && !s.deletedAt);
+                saveToLocalStorage();
+            }
+            return sales;
+        } catch (_) {
+            return sales;
+        }
+    },
     async fetchUsers() {
         try {
             if (isOnline && AuthModule.isAdmin()) {
@@ -3506,7 +3537,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         return;
     }
     productsGrid.innerHTML = '';
-    const chunkSize = 100;
+    const chunkSize = 60;
     let index = 0;
     function renderChunk() {
         const fragment = document.createDocumentFragment();
@@ -3899,18 +3930,43 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
     }
     
     isReportsLoading = true;
+    const today = new Date().toISOString().split('T')[0];
+    const reportDateEl = document.getElementById('report-date');
+    if (reportDateEl && !reportDateEl.value) reportDateEl.value = today;
+    const periodEl = document.getElementById('report-period');
+    const startEl = document.getElementById('report-start-date');
+    const endEl = document.getElementById('report-end-date');
+    let selectedDateObj = reportDateEl && reportDateEl.value ? new Date(reportDateEl.value) : new Date();
+    let rangeStart, rangeEnd;
+    const v = periodEl ? (periodEl.value || 'day') : 'day';
+    if (v === 'day') {
+        rangeStart = new Date(selectedDateObj); rangeStart.setHours(0,0,0,0);
+        rangeEnd = new Date(selectedDateObj); rangeEnd.setHours(23,59,59,999);
+    } else if (v === 'week') {
+        const d = new Date(selectedDateObj);
+        const diffToMonday = (d.getDay() + 6) % 7;
+        rangeStart = new Date(d); rangeStart.setDate(d.getDate() - diffToMonday); rangeStart.setHours(0,0,0,0);
+        rangeEnd = new Date(rangeStart); rangeEnd.setDate(rangeStart.getDate() + 6); rangeEnd.setHours(23,59,59,999);
+    } else if (v === 'month') {
+        const d = new Date(selectedDateObj);
+        rangeStart = new Date(d.getFullYear(), d.getMonth(), 1); rangeStart.setHours(0,0,0,0);
+        rangeEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0); rangeEnd.setHours(23,59,59,999);
+    } else {
+        const s = startEl && startEl.value ? new Date(startEl.value) : null;
+        const e = endEl && endEl.value ? new Date(endEl.value) : null;
+        if (s) { rangeStart = new Date(s); rangeStart.setHours(0,0,0,0); }
+        if (e) { rangeEnd = new Date(e); rangeEnd.setHours(23,59,59,999); }
+    }
+    const startIso = rangeStart ? rangeStart.toISOString() : '1970-01-01T00:00:00.000Z';
+    const endIso = rangeEnd ? rangeEnd.toISOString() : new Date().toISOString();
     Promise.allSettled([
-        DataModule.fetchSales(),
+        DataModule.fetchSalesForRange(startIso, endIso),
         DataModule.fetchDeletedSales()
     ]).then(results => {
-        const salesRes = results[0];
-        const deletedRes = results[1];
-        if (salesRes.status === 'fulfilled' && Array.isArray(salesRes.value)) {
-            sales = salesRes.value;
-        }
-        if (deletedRes.status === 'fulfilled' && Array.isArray(deletedRes.value)) {
-            deletedSales = deletedRes.value;
-        }
+        const sRes = results[0];
+        const dRes = results[1];
+        if (sRes.status === 'fulfilled' && Array.isArray(sRes.value)) sales = sRes.value;
+        if (dRes.status === 'fulfilled' && Array.isArray(dRes.value)) deletedSales = dRes.value;
         isReportsLoading = false;
         if (reportsLoading) reportsLoading.style.display = 'none';
         updateSalesTables();
@@ -4056,7 +4112,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                 return dateB - dateA;
             });
             let idx = 0;
-            const chunkSize = 200;
+            const chunkSize = 100;
             function renderDailyChunk() {
                 let html = '';
                 for (let i = 0; i < chunkSize && idx < dailySales.length; i++, idx++) {
