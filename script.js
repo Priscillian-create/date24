@@ -2744,6 +2744,20 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
             }
         });
     });
+    
+    if (currentUser && currentUser.id) {
+      channel.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'users', filter: 'id=eq.' + currentUser.id }, (payload) => {
+        try {
+          const u = payload && payload.new ? payload.new : null;
+          if (!u) return;
+          currentUser = { ...currentUser, ...u };
+          try { localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(currentUser)); } catch(_) {}
+          if (currentUserEl) currentUserEl.textContent = currentUser.name || currentUserEl.textContent;
+          if (userRoleEl) userRoleEl.textContent = currentUser.role || userRoleEl.textContent;
+          applyRoleUIRestrictions();
+        } catch (_) {}
+      });
+    }
   
     channel.subscribe();
     appRealtimeChannel = channel;
@@ -3177,10 +3191,8 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
             usersContainer.style.display = 'none';
         }
         
-        const addProductBtns = document.querySelectorAll('.add-product-btn');
-        addProductBtns.forEach(btn => {
-            btn.style.display = AuthModule.isAdmin() ? 'block' : 'none';
-        });
+        applyRoleUIRestrictions();
+        refreshCurrentUserFromDB();
         
         if (!AuthModule.isAdmin()) {
             document.querySelectorAll('.nav-link[data-page="expenses"], .nav-link[data-page="purchases"], .nav-link[data-page="analytics"]')
@@ -3261,6 +3273,35 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
     setTimeout(() => {
         notification.classList.remove('show');
     }, 3000);
+  }
+  
+  async function refreshCurrentUserFromDB() {
+    try {
+      if (!currentUser || !currentUser.id || !isOnline) return;
+      const { data, error } = await supabase.from('users').select('*').eq('id', currentUser.id).single();
+      if (!error && data) {
+        currentUser = { ...currentUser, ...data };
+        try { localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(currentUser)); } catch(_) {}
+        if (currentUserEl) currentUserEl.textContent = currentUser.name || currentUserEl.textContent;
+        if (userRoleEl) userRoleEl.textContent = currentUser.role || userRoleEl.textContent;
+        applyRoleUIRestrictions();
+      }
+    } catch (_) {}
+  }
+  
+  function applyRoleUIRestrictions() {
+    const isAdmin = AuthModule.isAdmin();
+    try {
+      const addBtn = document.getElementById('add-product-btn');
+      if (addBtn) addBtn.style.display = isAdmin ? 'block' : 'none';
+      const addInvBtn = document.getElementById('add-inventory-btn');
+      if (addInvBtn) addInvBtn.style.display = isAdmin ? 'block' : 'none';
+      document.querySelectorAll('.nav-link[data-page="expenses"], .nav-link[data-page="purchases"], .nav-link[data-page="analytics"]').forEach(el => {
+        if (el && el.parentElement) el.parentElement.style.display = isAdmin ? '' : 'none';
+      });
+      const usersContainer = document.getElementById('users-container');
+      if (usersContainer) usersContainer.style.display = isAdmin ? 'block' : 'none';
+    } catch (_) {}
   }
   
   function showInstallPromptNotification() {
