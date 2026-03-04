@@ -154,6 +154,8 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
   let isReportsLoading = false;
   let lastOverallTotals = { total: 0, transactions: 0, items: 0, cash: 0, pos: 0 };
   let lastDailyTotals = { total: 0, transactions: 0, items: 0, cash: 0, pos: 0 };
+  let lastProductsSyncTs = '1970-01-01T00:00:00.000Z';
+  let lastSalesSyncTs = '1970-01-01T00:00:00.000Z';
   
   // Local storage keys
   const STORAGE_KEYS = {
@@ -166,7 +168,9 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
     EXPENSES: 'pagerrysmart_expenses',
     PURCHASES: 'pagerrysmart_purchases',
     STOCK_ALERTS: 'pagerrysmart_stock_alerts',
-    PROFIT_DATA: 'pagerrysmart_profit_data'
+    PROFIT_DATA: 'pagerrysmart_profit_data',
+    PRODUCTS_SYNC_TS: 'pagerrysmart_products_sync_ts',
+    SALES_SYNC_TS: 'pagerrysmart_sales_sync_ts'
   };
   function runMigrations(prev) {
     const move = (from, to) => {
@@ -756,7 +760,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                 while (true) {
                     const { data, error } = await supabase
                         .from('products')
-                        .select('id,name,category,price,stock,expirydate,barcode,deleted')
+                        .select('id,name,category,price,stock,expirydate,barcode,deleted,updated_at')
                         .range(offset, offset + limit - 1);
                     if (error) throw error;
                     const batch = (data || []).map(p => {
@@ -794,12 +798,68 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                 dedupeProducts();
                 productsHasMore = false;
                 productsOffset = products.length;
+                try {
+                    const maxTs = acc.reduce((m, p) => {
+                        const t = p && p.updated_at ? new Date(p.updated_at).toISOString() : null;
+                        return t && t > m ? t : m;
+                    }, lastProductsSyncTs || '1970-01-01T00:00:00.000Z');
+                    lastProductsSyncTs = maxTs;
+                } catch (_) {}
                 saveToLocalStorage();
                 return products;
             }
             return products;
         } catch (error) {
             console.error('Error in fetchAllProducts:', error);
+            return products;
+        }
+    },
+    
+    async fetchProductsSince(sinceTs) {
+        try {
+            if (!isOnline) return products;
+            const limit = PRODUCTS_PAGE_SIZE;
+            let page = 0;
+            const updates = [];
+            while (true) {
+                const { data, error } = await supabase
+                    .from('products')
+                    .select('id,name,category,price,stock,expirydate,barcode,deleted,updated_at')
+                    .gt('updated_at', sinceTs || '1970-01-01T00:00:00.000Z')
+                    .order('updated_at', { ascending: true })
+                    .range(page * limit, page * limit + limit - 1);
+                if (error) throw error;
+                if (!data || data.length === 0) break;
+                const batch = data.map(p => {
+                    if (p.expirydate && !p.expiryDate) p.expiryDate = p.expirydate;
+                    return p;
+                });
+                updates.push(...batch);
+                if (data.length < limit) break;
+                page++;
+            }
+            if (updates.length === 0) return products;
+            const byId = new Map(products.map(p => [p.id, p]));
+            updates.forEach(u => {
+                const exist = byId.get(u.id);
+                if (exist) {
+                    Object.assign(exist, u);
+                } else {
+                    products.push(u);
+                }
+            });
+            dedupeProducts();
+            try {
+                const maxTs = updates.reduce((m, p) => {
+                    const t = p && p.updated_at ? new Date(p.updated_at).toISOString() : null;
+                    return t && t > m ? t : m;
+                }, sinceTs || '1970-01-01T00:00:00.000Z');
+                lastProductsSyncTs = maxTs;
+            } catch (_) {}
+            saveToLocalStorage();
+            return products;
+        } catch (e) {
+            console.error('Error in fetchProductsSince:', e);
             return products;
         }
     },
@@ -2578,24 +2638,83 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
   
     const channel = supabase.channel('app-changes');
   
-    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => {
-        DataModule.fetchAllProducts().then(updatedProducts => {
-            products = updatedProducts;
+    channel.on('postgres_changes', { event: 'INSERT', schema: 'public', table: ' sporoducts' }, (payload) => {});
+    channel.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'products' }, (payload) => {
+        try {
+            const p = payload && payload.new ? payload.new : null;
+            if (!p) return;
+            if (p.expirydate && !p.expiryDate) p.expiryDate = p.expirydate;
+            const idx = products.findIndex(x => x.id === p.id);
+            if (idx >= 0) products[idx] = { ...products[idx], ...p }; else products.push(p);
+            dedupeProducts();
+            try { const t = p.updated_at ? new Date(p.updated_at).toISOString() : null; if (t && t > lastProductsSyncTs) lastProductsSyncTs = t; } catch(_) {}
             saveToLocalStorage();
             loadProducts();
-            if (currentPage === 'inventory') {
-                loadInventory();
-            }
+            if (currentPage === 'inventory') loadInventory();
             checkAndGenerateAlerts();
-        });
+        } catch (_) {}
+    });
+    channel.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'products' }, (payload) => {
+        try {
+            const p = payload && payload.new ? payload.new : null;
+            if (!p) return;
+            if (p.expirydate && !p.expiryDate) p.expiryDate = p.expirydate;
+            const idx = products.findIndex(x => x.id === p.id);
+            if (idx >= 0) products[idx] = { ...products[idx], ...p };
+            dedupeProducts();
+            try { const t = p.updated_at ? new Date(p.updated_at).toISOString() : null; if (t && t > lastProductsSyncTs) lastProductsSyncTs = t; } catch(_) {}
+            saveToLocalStorage();
+            if (currentPage === 'inventory') loadInventory(); else loadProducts();
+            checkAndGenerateAlerts();
+        } catch (_) {}
+    });
+    channel.on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'products' }, (payload) => {
+        try {
+            const p = payload && payload.old ? payload.old : null;
+            if (!p) return;
+            products = products.filter(x => x.id !== p.id);
+            saveToLocalStorage();
+            if (currentPage === 'inventory') loadInventory(); else loadProducts();
+            checkAndGenerateAlerts();
+        } catch (_) {}
     });
   
-    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, () => {
-        DataModule.fetchSales().then(updatedSales => {
-            sales = updatedSales;
+    channel.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sales' }, (payload) => {
+        try {
+            const s = payload && payload.new ? payload.new : null;
+            if (!s) return;
+            if (!s.receiptNumber && s.receiptnumber) s.receiptNumber = s.receiptnumber;
+            const exists = sales.find(x => x.receiptNumber === s.receiptnumber || x.receiptNumber === s.receiptNumber);
+            if (!exists) {
+                sales.unshift(s);
+                try { const t = s.updated_at ? new Date(s.updated_at).toISOString() : null; if (t && t > lastSalesSyncTs) lastSalesSyncTs = t; } catch(_) {}
+                saveToLocalStorage();
+                loadSales();
+            }
+        } catch (_) {}
+    });
+    channel.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'sales' }, (payload) => {
+        try {
+            const s = payload && payload.new ? payload.new : null;
+            if (!s) return;
+            if (!s.receiptNumber && s.receiptnumber) s.receiptNumber = s.receiptnumber;
+            const idx = sales.findIndex(x => (x.receiptNumber === s.receiptnumber) || (x.receiptNumber === s.receiptNumber));
+            if (idx >= 0) {
+                sales[idx] = { ...sales[idx], ...s };
+                saveToLocalStorage();
+                loadSales();
+            }
+        } catch (_) {}
+    });
+    channel.on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'sales' }, (payload) => {
+        try {
+            const s = payload && payload.old ? payload.old : null;
+            if (!s) return;
+            const rn = s.receiptnumber || s.receiptNumber;
+            sales = sales.filter(x => x.receiptNumber !== rn);
             saveToLocalStorage();
             loadSales();
-        });
+        } catch (_) {}
     });
   
     channel.on('postgres_changes', { event: '*', schema: 'public', table: 'deleted_sales' }, () => {
@@ -2781,6 +2900,15 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                 try { localStorage.removeItem(STORAGE_KEYS.PROFIT_DATA); } catch (_) {}
             }
         }
+        
+        try {
+            const ts = localStorage.getItem(STORAGE_KEYS.PRODUCTS_SYNC_TS);
+            if (ts) lastProductsSyncTs = ts;
+        } catch (_) {}
+        try {
+            const ts2 = localStorage.getItem(STORAGE_KEYS.SALES_SYNC_TS);
+            if (ts2) lastSalesSyncTs = ts2;
+        } catch (_) {}
     } catch (e) {
         console.error('Error loading data from localStorage:', e);
         // Reset to defaults on error
@@ -2807,6 +2935,8 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         localStorage.setItem(STORAGE_KEYS.PURCHASES, JSON.stringify(purchases));
         localStorage.setItem(STORAGE_KEYS.STOCK_ALERTS, JSON.stringify(stockAlerts));
         localStorage.setItem(STORAGE_KEYS.PROFIT_DATA, JSON.stringify(profitData));
+        localStorage.setItem(STORAGE_KEYS.PRODUCTS_SYNC_TS, String(lastProductsSyncTs || '1970-01-01T00:00:00.000Z'));
+        localStorage.setItem(STORAGE_KEYS.SALES_SYNC_TS, String(lastSalesSyncTs || '1970-01-01T00:00:00.000Z'));
         
         if (currentUser) {
             localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(currentUser));
@@ -3377,7 +3507,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
     if (inventoryLoading) inventoryLoading.style.display = isOnline ? 'flex' : 'none';
     try {
         if (isOnline) {
-            await DataModule.fetchAllProducts();
+            await DataModule.fetchProductsSince(lastProductsSyncTs);
             if (inventoryLoading) inventoryLoading.style.display = 'none';
         }
     } catch (e) {}
