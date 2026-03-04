@@ -3907,24 +3907,24 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
     const periodEl = document.getElementById('report-period');
     const startEl = document.getElementById('report-start-date');
     const endEl = document.getElementById('report-end-date');
-    const debouncedGenerateReport = debounce(() => generateReport(), 150);
+    const debouncedRefreshReports = debounce(() => refreshReportData(), 150);
     if (periodEl) {
         periodEl.addEventListener('change', () => {
             const v = periodEl.value || 'day';
             const showRange = v === 'custom';
             if (startEl) startEl.style.display = showRange ? '' : 'none';
             if (endEl) endEl.style.display = showRange ? '' : 'none';
-            debouncedGenerateReport();
+            debouncedRefreshReports();
         });
     }
     if (reportDateEl) {
-        reportDateEl.addEventListener('change', debouncedGenerateReport);
+        reportDateEl.addEventListener('change', debouncedRefreshReports);
     }
-    if (startEl) startEl.addEventListener('change', debouncedGenerateReport);
-    if (endEl) endEl.addEventListener('change', debouncedGenerateReport);
+    if (startEl) startEl.addEventListener('change', debouncedRefreshReports);
+    if (endEl) endEl.addEventListener('change', debouncedRefreshReports);
     const generateBtn = document.getElementById('generate-report-btn');
     if (generateBtn) {
-        generateBtn.onclick = debouncedGenerateReport;
+        generateBtn.onclick = debouncedRefreshReports;
     }
     const productSearchEl = document.getElementById('report-product-search');
     if (productSearchEl) {
@@ -3980,12 +3980,69 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         isReportsLoading = false;
         if (reportsLoading) reportsLoading.style.display = 'none';
         updateSalesTables();
-        debouncedGenerateReport();
+        generateReport();
     }).catch(() => {
         isReportsLoading = false;
         if (reportsLoading) reportsLoading.style.display = 'none';
-        debouncedGenerateReport();
+        generateReport();
     });
+  }
+  
+  function refreshReportData() {
+    try {
+        const reportsLoading = document.getElementById('reports-loading');
+        if (reportsLoading) reportsLoading.style.display = 'flex';
+        isReportsLoading = true;
+        const reportDateEl = document.getElementById('report-date');
+        const periodEl = document.getElementById('report-period');
+        const startEl = document.getElementById('report-start-date');
+        const endEl = document.getElementById('report-end-date');
+        const selectedDateObj = reportDateEl && reportDateEl.value ? new Date(reportDateEl.value) : new Date();
+        const v = periodEl ? (periodEl.value || 'day') : 'day';
+        let rangeStart, rangeEnd;
+        if (v === 'day') {
+            rangeStart = new Date(selectedDateObj); rangeStart.setHours(0,0,0,0);
+            rangeEnd = new Date(selectedDateObj); rangeEnd.setHours(23,59,59,999);
+        } else if (v === 'week') {
+            const d = new Date(selectedDateObj);
+            const diffToMonday = (d.getDay() + 6) % 7;
+            rangeStart = new Date(d); rangeStart.setDate(d.getDate() - diffToMonday); rangeStart.setHours(0,0,0,0);
+            rangeEnd = new Date(rangeStart); rangeEnd.setDate(rangeStart.getDate() + 6); rangeEnd.setHours(23,59,59,999);
+        } else if (v === 'month') {
+            const d = new Date(selectedDateObj);
+            rangeStart = new Date(d.getFullYear(), d.getMonth(), 1); rangeStart.setHours(0,0,0,0);
+            rangeEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0); rangeEnd.setHours(23,59,59,999);
+        } else {
+            const s = startEl && startEl.value ? new Date(startEl.value) : null;
+            const e = endEl && endEl.value ? new Date(endEl.value) : null;
+            if (s) { rangeStart = new Date(s); rangeStart.setHours(0,0,0,0); }
+            if (e) { rangeEnd = new Date(e); rangeEnd.setHours(23,59,59,999); }
+        }
+        const startIso = rangeStart ? rangeStart.toISOString() : '1970-01-01T00:00:00.000Z';
+        const endIso = rangeEnd ? rangeEnd.toISOString() : new Date().toISOString();
+        Promise.allSettled([
+            DataModule.fetchSalesForRange(startIso, endIso),
+            DataModule.fetchDeletedSales()
+        ]).then(results => {
+            const sRes = results[0];
+            const dRes = results[1];
+            if (sRes.status === 'fulfilled' && Array.isArray(sRes.value)) sales = sRes.value;
+            if (dRes.status === 'fulfilled' && Array.isArray(dRes.value)) deletedSales = dRes.value;
+            isReportsLoading = false;
+            if (reportsLoading) reportsLoading.style.display = 'none';
+            updateSalesTables();
+            generateReport();
+        }).catch(() => {
+            isReportsLoading = false;
+            if (reportsLoading) reportsLoading.style.display = 'none';
+            generateReport();
+        });
+    } catch (_) {
+        isReportsLoading = false;
+        const reportsLoading = document.getElementById('reports-loading');
+        if (reportsLoading) reportsLoading.style.display = 'none';
+        generateReport();
+    }
   }
   
   function generateReport() {
@@ -6173,7 +6230,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
   // Report generation
   const generateReportBtn = document.getElementById('generate-report-btn');
   if (generateReportBtn) {
-    generateReportBtn.addEventListener('click', generateReport);
+    generateReportBtn.addEventListener('click', refreshReportData);
   }
   
   // Manual sync button
