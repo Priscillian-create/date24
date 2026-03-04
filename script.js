@@ -493,12 +493,17 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         try {
             const { data, error } = await supabase.auth.signInWithPassword({ email, password });
             if (error) throw error;
-  
+            
+            let savedRole = null;
+            try {
+                const cu = JSON.parse(localStorage.getItem(STORAGE_KEYS.CURRENT_USER) || '{}');
+                savedRole = (cu && cu.role) || null;
+            } catch(_) {}
             const fallbackUser = {
                 id: data.user.id,
                 name: data.user.user_metadata?.name || data.user.email?.split('@')[0] || 'User',
                 email: data.user.email,
-                role: data.user.user_metadata?.role || 'cashier',
+                role: savedRole || data.user.user_metadata?.role || 'cashier',
                 created_at: data.user.created_at,
                 last_login: new Date().toISOString()
             };
@@ -508,7 +513,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                     .from('users')
                     .select('*')
                     .eq('id', data.user.id)
-                    .single();
+                    .maybeSingle();
   
                 if (!userError && userData) {
                     currentUser = userData;
@@ -527,7 +532,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                             .from('users')
                             .insert(fallbackUser)
                             .select()
-                            .single();
+                            .maybeSingle();
                         if (newUser) currentUser = newUser;
                     } catch (insertError) {
                         console.warn('Could not create user in database:', insertError);
@@ -596,11 +601,16 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
     },
     
     async handleExistingSession(session, callback) {
+        let savedRole = null;
+        try {
+            const cu = JSON.parse(localStorage.getItem(STORAGE_KEYS.CURRENT_USER) || '{}');
+            savedRole = (cu && cu.role) || null;
+        } catch(_) {}
         const fallbackUser = {
             id: session.user.id,
             name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
             email: session.user.email,
-            role: session.user.user_metadata?.role || 'cashier',
+            role: savedRole || session.user.user_metadata?.role || 'cashier',
             created_at: session.user.created_at,
             last_login: new Date().toISOString()
         };
@@ -610,7 +620,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                 .from('users')
                 .select('*')
                 .eq('id', session.user.id)
-                .single();
+                .maybeSingle();
             
             if (!error && userData) {
                 currentUser = userData;
@@ -626,7 +636,7 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
                         .from('users')
                         .insert(fallbackUser)
                         .select()
-                        .single();
+                        .maybeSingle();
                     if (newUser) {
                         currentUser = newUser;
                         localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(currentUser));
@@ -2785,6 +2795,17 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
           applyRoleUIRestrictions();
         } catch (_) {}
       });
+      channel.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: 'id=eq.' + currentUser.id }, (payload) => {
+        try {
+          const p = payload && payload.new ? payload.new : null;
+          if (!p) return;
+          currentUser = { ...currentUser, ...p };
+          try { localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(currentUser)); } catch(_) {}
+          if (currentUserEl) currentUserEl.textContent = currentUser.name || currentUserEl.textContent;
+          if (userRoleEl) userRoleEl.textContent = currentUser.role || userRoleEl.textContent;
+          applyRoleUIRestrictions();
+        } catch (_) {}
+      });
     }
   
     channel.subscribe();
@@ -3306,14 +3327,22 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
   async function refreshCurrentUserFromDB() {
     try {
       if (!currentUser || !currentUser.id || !isOnline) return;
-      const { data, error } = await supabase.from('users').select('*').eq('id', currentUser.id).single();
-      if (!error && data) {
-        currentUser = { ...currentUser, ...data };
-        try { localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(currentUser)); } catch(_) {}
-        if (currentUserEl) currentUserEl.textContent = currentUser.name || currentUserEl.textContent;
-        if (userRoleEl) userRoleEl.textContent = currentUser.role || userRoleEl.textContent;
-        applyRoleUIRestrictions();
+      // Prefer role/name from profiles table if available, fallback to users
+      let profile = null;
+      try {
+        const { data: pRow, error: pErr } = await supabase.from('profiles').select('id,name,role').eq('id', currentUser.id).maybeSingle();
+        if (!pErr && pRow) profile = pRow;
+      } catch (_) {}
+      if (!profile) {
+        const { data: uRow, error: uErr } = await supabase.from('users').select('id,name,role').eq('id', currentUser.id).maybeSingle();
+        if (!uErr && uRow) profile = uRow;
       }
+      if (!profile) return;
+      currentUser = { ...currentUser, ...profile };
+      try { localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(currentUser)); } catch(_) {}
+      if (currentUserEl) currentUserEl.textContent = currentUser.name || currentUserEl.textContent;
+      if (userRoleEl) userRoleEl.textContent = currentUser.role || userRoleEl.textContent;
+      applyRoleUIRestrictions();
     } catch (_) {}
   }
   
@@ -6348,11 +6377,16 @@ if ('serviceWorker' in navigator && !window.location.hostname.includes('stackbli
         const { data: { session } } = await supabase.auth.getSession();
         if (session || currentUser) {
             if (session && !currentUser) {
+                let savedRole = null;
+                try {
+                    const cu = JSON.parse(localStorage.getItem(STORAGE_KEYS.CURRENT_USER) || '{}');
+                    savedRole = (cu && cu.role) || null;
+                } catch(_) {}
                 currentUser = {
                     id: session.user.id,
                     name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
                     email: session.user.email,
-                    role: session.user.user_metadata?.role || 'cashier',
+                    role: savedRole || session.user.user_metadata?.role || 'cashier',
                     last_login: new Date().toISOString()
                 };
                 localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(currentUser));
